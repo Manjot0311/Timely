@@ -1339,6 +1339,32 @@ a {
   text-align: center; color: var(--text-tertiary); font-size: 0.82rem;
   margin-bottom: 16px; border: 1px solid var(--border-soft);
 }
+.ob-section-label {
+  font-size: 0.65rem; font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 4px 0 2px; margin-top: 4px;
+}
+.ob-divider {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0;
+}
+.ob-divider span {
+  font-size: 0.68rem; color: var(--text-tertiary); white-space: nowrap;
+}
+.ob-divider::before, .ob-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border-soft);
+}
+.ob-actions {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 20px; padding-bottom: 4px;
+}
+.ob-recap-section {
+  font-size: 0.62rem; font-weight: 700; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 10px 0 4px; border-top: 1px solid var(--border-soft);
+  margin-top: 4px;
+}
+.ob-recap-section:first-child { border-top: none; padding-top: 0; }
 
 /* ─── BUSTA REMINDER BANNER ──────────────────────────────────── */
 #busta-reminder {
@@ -2103,10 +2129,8 @@ function calcFP(toY, toM, toToday = false) {
 
 /* ═══════════════════════════════════════════════════════════════
    js/views/onboarding.js — Configurazione iniziale e reminder busta
-   Appare al primo avvio e richiamabile da Impostazioni.
    ═══════════════════════════════════════════════════════════════ */
 
-// ─── STEP STATE ───────────────────────────────────────────────
 let _obStep = 1;
 const OB_STEPS = 3;
 
@@ -2116,8 +2140,7 @@ function showOnboarding(fromSettings = false) {
 }
 
 function _renderOnboarding(fromSettings = false) {
-  const overlay = document.getElementById('onboarding-overlay');
-  overlay.classList.add('open');
+  document.getElementById('onboarding-overlay').classList.add('open');
   _renderObStep(fromSettings);
 }
 
@@ -2128,14 +2151,11 @@ function closeOnboarding() {
 function _renderObStep(fromSettings = false) {
   const body = document.getElementById('ob-body');
   const prog = document.getElementById('ob-progress');
-
-  // Progress dots
   prog.innerHTML = Array.from({length: OB_STEPS}, (_, i) =>
     `<div class="ob-dot${i + 1 === _obStep ? ' active' : ''}"></div>`
   ).join('');
-
   if (_obStep === 1) _obStep1(body, fromSettings);
-  if (_obStep === 2) _obStep2(body);
+  if (_obStep === 2) _obStep2(body, fromSettings);
   if (_obStep === 3) _obStep3(body, fromSettings);
 }
 
@@ -2145,28 +2165,31 @@ function _obStep1(body, fromSettings) {
   body.innerHTML = `
     <div class="ob-icon">📋</div>
     <div class="ob-title">Il tuo contratto</div>
-    <div class="ob-desc">Inserisci i dati del tuo contratto di lavoro. Servono per calcolare correttamente ore e saldi.</div>
+    <div class="ob-desc">Queste info le trovi sul tuo contratto o sulla busta paga. Le usi una volta sola.</div>
 
     <div class="ob-fields">
+
       <div class="field-group">
         <label class="field-label">Ore giornaliere contrattuali</label>
         <input type="number" id="ob-ore-std" class="field-input" step="0.5" min="1" max="12"
           value="${cfg.oreStd || 8}" placeholder="8">
-        <div class="field-hint">Es. 8 per una giornata standard di 8 ore</div>
+        <div class="field-hint">Quante ore lavori in una giornata intera — di solito 8</div>
       </div>
+
+      <div class="ob-section-label">Maturazione mensile — dalla busta paga, voce "Maturato"</div>
 
       <div class="ob-row-2">
         <div class="field-group">
-          <label class="field-label">Ferie maturate / mese (ore)</label>
+          <label class="field-label">🌤 Ferie / mese (ore)</label>
           <input type="number" id="ob-fer-mat" class="field-input" step="0.01" min="0"
             value="${cfg.ferMese || ''}" placeholder="13.33">
-          <div class="field-hint">Dalla busta paga — voce "Maturato Ferie"</div>
+          <div class="field-hint">Quante ore di ferie guadagni ogni mese — uguale sempre</div>
         </div>
         <div class="field-group">
-          <label class="field-label">Permessi maturati / mese (ore)</label>
+          <label class="field-label">🕐 Permessi / mese (ore)</label>
           <input type="number" id="ob-perm-mat" class="field-input" step="0.01" min="0"
             value="${cfg.permMese || ''}" placeholder="7.33">
-          <div class="field-hint">Dalla busta paga — voce "Maturato Permessi"</div>
+          <div class="field-hint">Quante ore di permesso guadagni ogni mese — uguale sempre</div>
         </div>
       </div>
 
@@ -2174,32 +2197,33 @@ function _obStep1(body, fromSettings) {
         <label class="field-label">Giorno di ricezione busta paga</label>
         <input type="number" id="ob-busta-giorno" class="field-input" step="1" min="1" max="31"
           value="${cfg.bustaGiorno || ''}" placeholder="Es. 27">
-        <div class="field-hint">Il giorno del mese in cui ricevi normalmente la busta paga</div>
+        <div class="field-hint">Il giorno del mese in cui ricevi la busta — l'app ti ricorderà di aggiornare i saldi</div>
       </div>
+
     </div>
 
-    <button class="btn btn-primary btn-block ob-next-btn" onclick="_obNext1(${fromSettings})">
-      Continua →
-    </button>
-    ${fromSettings ? `<button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="closeOnboarding()">Annulla</button>` : ''}
+    <div class="ob-actions">
+      <button class="btn btn-primary btn-block" onclick="_obNext1(${fromSettings})">Continua →</button>
+      ${fromSettings ? `<button class="btn btn-ghost btn-block" onclick="closeOnboarding()">Annulla</button>` : ''}
+    </div>
   `;
 }
 
 function _obNext1(fromSettings) {
-  const oreStd    = parseFloat(document.getElementById('ob-ore-std').value);
-  const ferMese   = parseFloat(document.getElementById('ob-fer-mat').value);
-  const permMese  = parseFloat(document.getElementById('ob-perm-mat').value);
+  const oreStd      = parseFloat(document.getElementById('ob-ore-std').value);
+  const ferMese     = parseFloat(document.getElementById('ob-fer-mat').value);
+  const permMese    = parseFloat(document.getElementById('ob-perm-mat').value);
   const bustaGiorno = parseInt(document.getElementById('ob-busta-giorno').value);
 
-  if (!oreStd || oreStd < 1)        return _obError('Inserisci le ore giornaliere');
-  if (!ferMese || ferMese < 0)      return _obError('Inserisci le ferie mensili');
-  if (!permMese || permMese < 0)    return _obError('Inserisci i permessi mensili');
-  if (!bustaGiorno || bustaGiorno < 1 || bustaGiorno > 31) return _obError('Inserisci un giorno valido (1-31)');
+  if (!oreStd || oreStd < 1)     return _obError('Inserisci le ore giornaliere');
+  if (!ferMese || ferMese < 0)   return _obError('Inserisci le ferie mensili');
+  if (!permMese || permMese < 0) return _obError('Inserisci i permessi mensili');
+  if (!bustaGiorno || bustaGiorno < 1 || bustaGiorno > 31) return _obError('Inserisci un giorno valido (1–31)');
 
   const profile = loadUserProfile();
-  profile.oreStd     = oreStd;
-  profile.ferMese    = ferMese;
-  profile.permMese   = permMese;
+  profile.oreStd      = oreStd;
+  profile.ferMese     = ferMese;
+  profile.permMese    = permMese;
   profile.bustaGiorno = bustaGiorno;
   saveUserProfile(profile);
 
@@ -2208,70 +2232,107 @@ function _obNext1(fromSettings) {
 }
 
 // ── Step 2: Saldi dalla busta paga ───────────────────────────
-function _obStep2(body) {
-  const cfg = loadUserProfile();
+function _obStep2(body, fromSettings) {
+  const cfg  = loadUserProfile();
   const oggi = new Date();
-  const maxDate = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2,'0')}-${String(oggi.getDate()).padStart(2,'0')}`;
+
+  // Selettori mese/anno
+  const anni  = [];
+  for (let y = oggi.getFullYear(); y >= oggi.getFullYear() - 2; y--) anni.push(y);
+
+  const mesiOptions = MI.map((nome, i) =>
+    `<option value="${i+1}" ${i === oggi.getMonth() ? 'selected' : ''}>${nome}</option>`
+  ).join('');
+  const anniOptions = anni.map(y =>
+    `<option value="${y}" ${y === oggi.getFullYear() ? 'selected' : ''}>${y}</option>`
+  ).join('');
+
+  // Pre-popola se già salvato
+  let preM = oggi.getMonth() + 1, preY = oggi.getFullYear();
+  if (cfg.bustaSaldoData) {
+    const [py, pm] = cfg.bustaSaldoData.split('-').map(Number);
+    preM = pm; preY = py;
+  }
 
   body.innerHTML = `
     <div class="ob-icon">🧾</div>
     <div class="ob-title">Saldi dalla busta paga</div>
-    <div class="ob-desc">Inserisci i saldi di ferie e permessi dall'<strong>ultima busta paga</strong> che hai ricevuto. Questi diventano il punto di partenza dei calcoli.</div>
+    <div class="ob-desc">
+      Apri l'<strong>ultima busta paga</strong> che hai ricevuto e cerca la sezione
+      <strong>"Ferie e Permessi"</strong>. Inserisci i valori alla voce <strong>"Saldo"</strong> o <strong>"Residuo"</strong>
+      — sono le ore che ti rimangono a quella data.
+    </div>
 
     <div class="ob-fields">
+
       <div class="field-group">
-        <label class="field-label">Data di riferimento della busta</label>
-        <input type="date" id="ob-busta-data" class="field-input"
-          max="${maxDate}"
-          value="${cfg.bustaSaldoData || ''}">
-        <div class="field-hint">Il mese a cui si riferisce la busta (es. se è la busta di Febbraio, metti l'ultimo giorno di Febbraio)</div>
+        <label class="field-label">A quale mese si riferisce la busta?</label>
+        <div class="ob-row-2">
+          <select id="ob-busta-mese" class="field-select">
+            ${MI.map((nome, i) => `<option value="${i+1}" ${i+1 === preM ? 'selected' : ''}>${nome}</option>`).join('')}
+          </select>
+          <select id="ob-busta-anno" class="field-select">
+            ${anni.map(y => `<option value="${y}" ${y === preY ? 'selected' : ''}>${y}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-hint">Es. se hai la busta di Febbraio 2026, seleziona Febbraio 2026</div>
+      </div>
+
+      <div class="ob-divider">
+        <span>Valori dalla busta — voce "Saldo" o "Residuo"</span>
       </div>
 
       <div class="ob-row-2">
         <div class="field-group">
-          <label class="field-label">Saldo ferie (ore)</label>
+          <label class="field-label">🌤 Saldo ferie (ore)</label>
           <input type="number" id="ob-fer-saldo" class="field-input" step="0.01"
-            value="${cfg.ferSaldo ?? ''}" placeholder="Es. -4.83">
-          <div class="field-hint">Voce "Saldo" o "Residuo" Ferie</div>
+            value="${cfg.ferSaldo ?? ''}" placeholder="-4.83">
+          <div class="field-hint">Può essere negativo</div>
         </div>
         <div class="field-group">
-          <label class="field-label">Saldo permessi (ore)</label>
+          <label class="field-label">🕐 Saldo permessi (ore)</label>
           <input type="number" id="ob-perm-saldo" class="field-input" step="0.01"
-            value="${cfg.permSaldo ?? ''}" placeholder="Es. 194.67">
-          <div class="field-hint">Voce "Saldo" o "Residuo" Permessi</div>
+            value="${cfg.permSaldo ?? ''}" placeholder="194.67">
+          <div class="field-hint">Di solito positivo</div>
         </div>
       </div>
+
     </div>
 
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button class="btn btn-ghost" onclick="_obBack()">← Indietro</button>
-      <button class="btn btn-primary" style="flex:1" onclick="_obNext2()">Continua →</button>
+    <div class="ob-actions">
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1" onclick="_obBack()">← Indietro</button>
+        <button class="btn btn-primary" style="flex:1" onclick="_obNext2()">Continua →</button>
+      </div>
+      ${fromSettings ? `<button class="btn btn-ghost btn-block" onclick="closeOnboarding()">Annulla</button>` : ''}
     </div>
   `;
 }
 
 function _obNext2() {
-  const bustaData  = document.getElementById('ob-busta-data').value;
-  const ferSaldo   = parseFloat(document.getElementById('ob-fer-saldo').value);
-  const permSaldo  = parseFloat(document.getElementById('ob-perm-saldo').value);
+  const mese     = parseInt(document.getElementById('ob-busta-mese').value);
+  const anno     = parseInt(document.getElementById('ob-busta-anno').value);
+  const ferSaldo  = parseFloat(document.getElementById('ob-fer-saldo').value);
+  const permSaldo = parseFloat(document.getElementById('ob-perm-saldo').value);
 
-  if (!bustaData)                        return _obError('Inserisci la data della busta');
-  if (isNaN(ferSaldo))                   return _obError('Inserisci il saldo ferie');
-  if (isNaN(permSaldo))                  return _obError('Inserisci il saldo permessi');
+  if (!mese || !anno)      return _obError('Seleziona mese e anno della busta');
+  if (isNaN(ferSaldo))     return _obError('Inserisci il saldo ferie');
+  if (isNaN(permSaldo))    return _obError('Inserisci il saldo permessi');
+
+  // Costruiamo la data come ultimo giorno del mese selezionato
+  const lastDay   = new Date(anno, mese, 0).getDate();
+  const bustaData = `${anno}-${String(mese).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
   const profile = loadUserProfile();
-  profile.bustaSaldoData  = bustaData;
-  profile.ferSaldo        = ferSaldo;
-  profile.permSaldo       = permSaldo;
-  // Segnamo che questa è la "busta ancora" — il primo anchor
-  profile.bustePagate     = profile.bustePagate || [];
-  // Aggiorna o aggiungi questo mese come anchor
+  profile.bustaSaldoData = bustaData;
+  profile.ferSaldo       = ferSaldo;
+  profile.permSaldo      = permSaldo;
+  profile.bustePagate    = profile.bustePagate || [];
   const existing = profile.bustePagate.findIndex(b => b.data === bustaData);
   const anchor   = { data: bustaData, fer: ferSaldo, perm: permSaldo };
   if (existing >= 0) profile.bustePagate[existing] = anchor;
   else profile.bustePagate.push(anchor);
   profile.bustePagate.sort((a,b) => a.data.localeCompare(b.data));
-
   saveUserProfile(profile);
 
   _obStep = 3;
@@ -2287,25 +2348,27 @@ function _obStep3(body, fromSettings) {
   body.innerHTML = `
     <div class="ob-icon">✅</div>
     <div class="ob-title">${fromSettings ? 'Configurazione aggiornata' : 'Tutto pronto!'}</div>
-    <div class="ob-desc">Ecco il riepilogo della tua configurazione.</div>
+    <div class="ob-desc">Controlla che tutto sia corretto prima di iniziare.</div>
 
     <div class="ob-recap">
+      <div class="ob-recap-section">Contratto</div>
       <div class="ob-recap-row">
         <span>Ore giornaliere</span>
         <strong>${cfg.oreStd}h</strong>
       </div>
       <div class="ob-recap-row">
-        <span>Ferie mensili</span>
+        <span>Ferie maturate / mese</span>
         <strong>${cfg.ferMese?.toFixed(2)}h</strong>
       </div>
       <div class="ob-recap-row">
-        <span>Permessi mensili</span>
+        <span>Permessi maturati / mese</span>
         <strong>${cfg.permMese?.toFixed(2)}h</strong>
       </div>
       <div class="ob-recap-row">
-        <span>Busta di riferimento</span>
-        <strong>${meseBusta}</strong>
+        <span>Busta paga ogni mese il</span>
+        <strong>giorno ${cfg.bustaGiorno}</strong>
       </div>
+      <div class="ob-recap-section">Saldi di partenza — busta ${meseBusta}</div>
       <div class="ob-recap-row">
         <span>Saldo ferie</span>
         <strong>${cfg.ferSaldo?.toFixed(2)}h</strong>
@@ -2314,16 +2377,14 @@ function _obStep3(body, fromSettings) {
         <span>Saldo permessi</span>
         <strong>${cfg.permSaldo?.toFixed(2)}h</strong>
       </div>
-      <div class="ob-recap-row">
-        <span>Busta in arrivo ogni mese il</span>
-        <strong>giorno ${cfg.bustaGiorno}</strong>
-      </div>
     </div>
 
-    <button class="btn btn-primary btn-block ob-next-btn" onclick="_obComplete()">
-      ${fromSettings ? 'Salva e chiudi' : 'Inizia a usare l\'app →'}
-    </button>
-    <button class="btn btn-ghost btn-block" style="margin-top:8px" onclick="_obBack()">← Modifica</button>
+    <div class="ob-actions">
+      <button class="btn btn-primary btn-block" onclick="_obComplete()">
+        ${fromSettings ? 'Salva e chiudi' : 'Inizia a usare l\'app →'}
+      </button>
+      <button class="btn btn-ghost btn-block" onclick="_obBack()">← Modifica</button>
+    </div>
   `;
 }
 
@@ -2332,7 +2393,6 @@ function _obComplete() {
   profile.onboardingDone = true;
   saveUserProfile(profile);
   closeOnboarding();
-  // Aggiorna config orario standard
   const stdH = profile.oreStd || 8;
   const hh = String(Math.floor(stdH)).padStart(2,'0');
   const mm = String(Math.round((stdH % 1) * 60)).padStart(2,'0');
@@ -2345,53 +2405,40 @@ function _obBack() {
   if (_obStep > 1) { _obStep--; _renderObStep(); }
 }
 
-function _obError(msg) {
-  showToast(msg, 'error');
-}
+function _obError(msg) { showToast(msg, 'error'); }
 
 // ─── REMINDER BUSTA PAGA ──────────────────────────────────────
-/**
- * Controlla se oggi è il giorno della busta e se non è ancora
- * stata registrata per questo mese. Se sì, mostra il reminder.
- */
 function checkBustaReminder() {
   const profile = loadUserProfile();
   if (!profile.onboardingDone) return;
   if (!profile.bustaGiorno)    return;
 
   const oggi = new Date();
-  const giornoOggi = oggi.getDate();
-  if (giornoOggi !== profile.bustaGiorno) return;
+  if (oggi.getDate() !== profile.bustaGiorno) return;
 
-  // Controlla se questo mese ha già un anchor
   const y = oggi.getFullYear();
   const m = oggi.getMonth() + 1;
-  // La busta di questo mese si riferisce al mese precedente
   const meseRif = m === 1 ? 12 : m - 1;
   const annoRif = m === 1 ? y - 1 : y;
-  const dataRif = `${annoRif}-${String(meseRif).padStart(2,'0')}-01`;
 
   const giaInserita = (profile.bustePagate || []).some(b => {
     const [by, bm] = b.data.split('-').map(Number);
     return by === annoRif && bm === meseRif;
   });
 
-  if (!giaInserita) {
-    showBustaReminder(meseRif, annoRif);
-  }
+  if (!giaInserita) showBustaReminder(meseRif, annoRif);
 }
 
 function showBustaReminder(mese, anno) {
   const banner = document.getElementById('busta-reminder');
   if (!banner) return;
   banner.querySelector('.br-text').innerHTML =
-    `<strong>Hai ricevuto la busta di ${MI[mese-1]} ${anno}?</strong> Aggiorna i saldi ferie e permessi.`;
+    `<strong>Busta di ${MI[mese-1]} ${anno}</strong> — aggiorna i saldi ferie e permessi.`;
   banner.classList.add('visible');
 }
 
 function openBustaUpdate() {
   document.getElementById('busta-reminder')?.classList.remove('visible');
-  // Vai direttamente allo step 2 dell'onboarding (inserimento saldi)
   _obStep = 2;
   _renderOnboarding(true);
 }
