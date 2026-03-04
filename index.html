@@ -1,0 +1,2868 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#111214">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Presenze">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <title>Presenze</title>
+  <!-- ── Service Worker ──────────────────────────────────────── -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          // file:// non supporta SW — silenzioso, funzionalità degradata
+          console.info('[SW] Registrazione non riuscita (file:// non supportato):', err.message);
+        });
+        // Ascolta messaggi dal SW (nuova versione installata)
+        navigator.serviceWorker.addEventListener('message', ev => {
+          if (ev.data?.type === 'SW_UPDATED') {
+            showUpdateBanner(ev.data.version);
+          }
+        });
+      });
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <!--
+    CSS e JS sono inline in questo file per garantire il funzionamento
+    con qualsiasi server (Live Server, GitHub Pages, file://, ecc.).
+    Per modificare: edita i file in css/ e js/, poi riesegui il bundle
+    oppure modifica direttamente <style> e <script> qui sotto.
+  -->
+  <style>
+/* ═══════════════════════════════════════════════════════════════
+   base.css — Design tokens, reset, tipografia globale
+   Modifica qui: colori, font, spacing di base
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── DESIGN TOKENS ──────────────────────────────────────────── */
+:root {
+  /* Superfici */
+  --bg:          #f8f8f7;
+  --surface:     #ffffff;
+  --surface-2:   #f3f3f1;
+  --surface-3:   #ebebea;
+  --border:      #d8d8d5;
+  --border-soft: #e8e8e5;
+
+  /* Testo */
+  --text-primary:   #1a1a18;
+  --text-secondary: #6b6b68;
+  --text-tertiary:  #a0a09c;
+
+  /* Colori semantici — sobri su fondo chiaro */
+  --accent: #2d2d2b;   /* antracite — lavoro / primario */
+  --green:  #3a7d5a;   /* positivo / straordinari */
+  --red:    #c0443a;   /* negativo / debiti */
+  --amber:  #a07020;   /* ferie */
+  --teal:   #3a7a78;   /* permessi */
+
+  /* Tipografia */
+  --font-sans:  'Geist', system-ui, sans-serif;
+  --font-mono:  'Geist Mono', monospace;
+  --font-serif: 'Instrument Serif', Georgia, serif;
+
+  /* Dimensioni app */
+  --nav-height:    68px;
+  --header-height: 56px;
+  --page-pad:      16px;
+  --safe-bottom:   env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── RESET ──────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+  background: none;
+  border: none;
+  color: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ─── UTILITY CLASSI COLORE ──────────────────────────────────── */
+.c-blue   { color: var(--accent); }
+.c-green  { color: var(--green); }
+.c-red    { color: var(--red); }
+.c-amber  { color: var(--amber); }
+.c-teal   { color: var(--teal); }
+.c-muted  { color: var(--text-secondary); }
+
+/* ─── UTILITY GENERICHE ──────────────────────────────────────── */
+.hidden { display: none !important; }
+.text-mono { font-family: var(--font-mono); }
+.divider { height: 1px; background: var(--border-soft); margin: 8px 0; }
+.section-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+  margin-top: 16px;
+}
+
+/* ─── ANIMAZIONI ─────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes sheetUp {
+  from { transform: translateY(40px); opacity: 0; }
+  to   { transform: none; opacity: 1; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   layout.css — Shell, header, navigazione, viste
+   Modifica qui: struttura pagina, posizione navbar, altezze
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── APP SHELL ──────────────────────────────────────────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ─── HEADER ─────────────────────────────────────────────────── */
+#header {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-pad);
+  padding-top: env(safe-area-inset-top, 0);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+
+.header-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-right {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ─── ICON BUTTON ────────────────────────────────────────────── */
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* ─── MAIN CONTENT ───────────────────────────────────────────── */
+#main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 8px);
+}
+
+/* ─── VIEWS ──────────────────────────────────────────────────── */
+.view {
+  display: none;
+  padding: var(--page-pad);
+  animation: fadeIn 0.18s ease;
+}
+.view.active {
+  display: block;
+}
+
+/* ─── BOTTOM NAV ─────────────────────────────────────────────── */
+#bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 640px;
+  height: calc(var(--nav-height) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  align-items: flex-start;
+  padding-top: 8px;
+  z-index: 50;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.15s;
+  border-radius: 10px;
+  margin: 0 4px;
+}
+
+.nav-item svg {
+  transition: stroke 0.15s;
+}
+
+.nav-item.active {
+  color: var(--text-primary);
+}
+
+.nav-item.active svg {
+  stroke: var(--accent);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   components.css — Componenti riutilizzabili
+   Modifica qui: bottoni, badge, card, modal, form, toast
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── BOTTONI ────────────────────────────────────────────────── */
+.btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.15s;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+
+.btn-ghost {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.btn-ghost:hover { border-color: var(--text-secondary); }
+
+.btn-danger {
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+  color: var(--red);
+}
+.btn-danger:hover { background: color-mix(in srgb, var(--red) 20%, transparent); }
+
+.btn-block { width: 100%; justify-content: center; }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+
+/* ─── BADGE ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-lavoro   { background: color-mix(in srgb, var(--green)  12%, transparent); color: var(--green); }
+.badge-ferie    { background: color-mix(in srgb, var(--amber)  14%, transparent); color: var(--amber); }
+.badge-festivo  { background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.badge-malattia { background: color-mix(in srgb, var(--red)    12%, transparent); color: var(--red); }
+.badge-permesso { background: color-mix(in srgb, var(--teal)   12%, transparent); color: var(--teal); }
+
+/* ─── STAT CARDS ─────────────────────────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.stat-label {
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.stat-sub {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ─── NAVIGAZIONE MESE ───────────────────────────────────────── */
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.month-nav h2 {
+  flex: 1;
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-family: var(--font-serif);
+  font-style: italic;
+}
+
+.nav-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── FORM ───────────────────────────────────────────────────── */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.field-input,
+.field-select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.field-input:focus,
+.field-select:focus { border-color: var(--accent); }
+
+.field-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b6b68' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px;
+}
+.field-select option { background: var(--surface); }
+
+.field-hint {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.time-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.absence-section {
+  background: color-mix(in srgb, var(--teal) 5%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--teal) 18%, transparent);
+  border-radius: 9px;
+  padding: 12px;
+}
+
+.absence-title {
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: var(--teal);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.time-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 11px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  outline: none;
+  width: 110px;
+  transition: border-color 0.15s;
+}
+.time-input:focus { border-color: var(--accent); }
+
+/* ─── MODAL ──────────────────────────────────────────────────── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 100;
+  align-items: flex-end;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.modal-overlay.open {
+  display: flex;
+  animation: overlayIn 0.2s ease;
+}
+
+.modal-sheet {
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding-bottom: calc(16px + var(--safe-bottom));
+  animation: sheetUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.modal-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 12px auto 0;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.modal-date {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modal-actions {
+  padding: 0 18px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-actions-right {
+  display: flex;
+  gap: 8px;
+}
+
+/* ─── TOAST ──────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + var(--safe-bottom) + 12px);
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  background: var(--surface-3);
+  color: var(--text-primary);
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 0.84rem;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s;
+  border: 1px solid var(--border);
+  z-index: 200;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.error   { background: color-mix(in srgb, var(--red)   15%, var(--surface-3)); color: var(--red);   border-color: color-mix(in srgb, var(--red)   30%, transparent); }
+.toast.success { color: var(--green); }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   views.css — Stili specifici delle singole viste
+   Organizzato per vista: MESE / ANNO / FERIE / SETTINGS
+   ═══════════════════════════════════════════════════════════════ */
+
+
+/* ══════════════════════════════════════════════════════════════
+   VISTA MESE
+   ══════════════════════════════════════════════════════════════ */
+
+/* ─── Quick entry bar ────────────────────────────────────────── */
+.quick-bar {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.quick-bar-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+
+.quick-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.quick-field label {
+  display: block;
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.quick-field input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 7px 6px;
+  border-radius: 7px;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.quick-field input:focus { border-color: var(--accent); }
+
+/* ─── FP Cards (ferie/permessi) ──────────────────────────────── */
+.fp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.fp-card {
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.fp-card.fer {
+  background: color-mix(in srgb, var(--amber) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--amber) 20%, transparent);
+}
+
+.fp-card.per {
+  background: color-mix(in srgb, var(--teal) 6%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--teal) 20%, transparent);
+}
+
+.fp-card-title {
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fp-card.fer .fp-card-title { color: var(--amber); }
+.fp-card.per .fp-card-title { color: var(--teal); }
+
+.fp-badge {
+  font-size: 0.58rem;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: auto;
+}
+
+.fp-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.fp-stat { text-align: center; }
+
+.fp-stat .v {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 500;
+  display: block;
+}
+
+.fp-stat .k {
+  font-size: 0.55rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: block;
+  margin-top: 2px;
+}
+
+.fp-saldo-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.fp-saldo-row .label {
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.fp-saldo-row .value {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.fp-days-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 4px;
+}
+
+.fp-days-row .label { font-size: 0.65rem; color: var(--text-tertiary); }
+.fp-days-row .value { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-secondary); }
+
+.fp-note {
+  font-size: 0.63rem;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-soft);
+  padding-top: 6px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+/* ─── Settimane & righe giorno ───────────────────────────────── */
+.week-block {
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.week-header {
+  background: var(--surface);
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.week-header.current {
+  border-left: 3px solid var(--accent);
+}
+
+.week-num {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.week-num .cur-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.week-extra-months {
+  font-size: 0.6rem;
+  color: var(--text-tertiary);
+  background: var(--surface-3);
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-weight: 500;
+}
+
+.week-total {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.day-rows { background: var(--surface-2); }
+
+.day-row {
+  display: grid;
+  grid-template-columns: 52px 72px 1fr auto;
+  align-items: center;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  cursor: pointer;
+  transition: background 0.1s;
+  min-width: 0;
+  gap: 0;
+}
+
+.day-row:last-child { border-bottom: none; }
+.day-row:hover { background: var(--surface-3); }
+.day-row.weekend     { opacity: 0.25; cursor: default; }
+.day-row.weekend:hover { background: inherit; }
+.day-row.today       { background: color-mix(in srgb, var(--accent) 5%, var(--surface-2)); }
+.day-row.today .day-date { color: var(--accent); }
+.day-row.other-month { opacity: 0.4; }
+.day-row.other-month .day-date { font-style: italic; }
+.day-row.ferie-row   { background: color-mix(in srgb, var(--amber) 4%, var(--surface-2)); }
+.day-row.permesso-row { background: color-mix(in srgb, var(--teal) 4%, var(--surface-2)); }
+
+.day-date {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.day-date strong { color: var(--text-primary); font-weight: 500; }
+
+.day-center { min-width: 0; overflow: hidden; }
+
+.day-times {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-note {
+  font-size: 0.68rem;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-right {
+  text-align: right;
+  flex-shrink: 0;
+  min-width: 56px;
+}
+
+.day-hours {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.day-delta {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  margin-top: 1px;
+}
+.day-delta.pos { color: var(--green); }
+.day-delta.neg { color: var(--red); }
+.day-delta.zer { color: var(--text-tertiary); }
+
+
+/* ══════════════════════════════════════════════════════════════
+   VISTA ANNO
+   ══════════════════════════════════════════════════════════════ */
+
+.year-selector {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.year-btn {
+  padding: 5px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+.year-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.year-btn:hover:not(.active) { border-color: var(--text-secondary); color: var(--text-primary); }
+
+.month-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.month-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.month-card:hover { border-color: var(--border); transform: translateY(-1px); }
+
+.month-card h4 {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.month-card h4 span { font-size: 0.68rem; color: var(--text-tertiary); font-weight: 400; }
+
+.month-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.month-row:last-of-type { border: none; }
+.month-row .k { color: var(--text-tertiary); }
+.month-row .v { font-family: var(--font-mono); font-weight: 500; }
+
+.month-bar-track {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.month-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.annual-fp {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.annual-fp-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.annual-fp-card.fer h4 { color: var(--amber); }
+.annual-fp-card.per h4 { color: var(--teal); }
+
+.annual-fp-card h4 {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 10px;
+}
+
+.annual-fp-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+}
+.annual-fp-row:last-child { border: none; }
+.annual-fp-row .k { color: var(--text-tertiary); }
+.annual-fp-row .v { font-family: var(--font-mono); font-weight: 600; }
+
+
+/* ══════════════════════════════════════════════════════════════
+   VISTA FERIE
+   ══════════════════════════════════════════════════════════════ */
+
+.fp-summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 12px;
+}
+.fp-summary-card.fer { border-left: 3px solid var(--amber); }
+.fp-summary-card.per { border-left: 3px solid var(--teal); }
+
+.fp-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.fp-summary-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.fp-summary-card.fer .fp-summary-title { color: var(--amber); }
+.fp-summary-card.per .fp-summary-title { color: var(--teal); }
+
+.fp-big-value { text-align: right; }
+
+.fp-big-value .hours {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.fp-big-value .days-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 3px;
+}
+
+.fp-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.fp-detail-item { text-align: center; }
+
+.fp-detail-item .v {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 500;
+  display: block;
+}
+
+.fp-detail-item .k {
+  font-size: 0.58rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: block;
+  margin-top: 2px;
+}
+
+.fp-detail-item .kd {
+  font-size: 0.56rem;
+  color: var(--text-tertiary);
+}
+
+.fp-table-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.fp-table-header {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr 1fr 1fr;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-3);
+}
+
+.fp-table-header span {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fp-table-header span:not(:first-child) { text-align: right; }
+
+.fp-table-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr 1fr 1fr;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  align-items: center;
+}
+.fp-table-row:last-child { border: none; }
+
+.fp-table-row .month-name {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.fp-table-row .cell {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-align: right;
+  color: var(--text-secondary);
+}
+
+.fp-table-row .cell.saldo {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.fp-table-row.current-month .month-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   VISTA SETTINGS
+   ══════════════════════════════════════════════════════════════ */
+
+.settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-section-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 8px;
+}
+
+.settings-card {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border-bottom: 1px solid var(--border-soft);
+  gap: 12px;
+}
+.settings-row:last-child { border-bottom: none; }
+
+.settings-row-info .label {
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.settings-row-info .desc {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.io-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.settings-footer {
+  text-align: center;
+  padding: 16px 0 4px;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+}
+
+/* ─── UPDATE BANNER ──────────────────────────────────────────── */
+#update-banner {
+  display: none;
+  position: fixed;
+  top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 580px;
+  width: calc(100% - 32px);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 80;
+  animation: fadeIn 0.25s ease;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+}
+#update-banner.visible { display: flex; }
+#update-banner .ub-text {
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  flex: 1;
+}
+#update-banner .ub-text strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+#update-banner .ub-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+#update-banner .ub-reload {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#update-banner .ub-dismiss {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── UPDATE BANNER ─────────────────────────────────────── -->
+  <div id="update-banner">
+    <div class="ub-text">
+      <strong>Nuova versione disponibile</strong> — ricarica per aggiornare l'app.
+    </div>
+    <div class="ub-actions">
+      <button class="ub-reload" onclick="location.reload()">Aggiorna</button>
+      <button class="ub-dismiss" onclick="document.getElementById('update-banner').classList.remove('visible')" title="Ignora">✕</button>
+    </div>
+  </div>
+
+    <!-- ── HEADER ─────────────────────────────────────────── -->
+    <header id="header">
+      <div class="header-left">
+        <span class="app-title">Presenze</span>
+        <span class="header-subtitle" id="header-subtitle"></span>
+      </div>
+      <div class="header-right">
+        <button class="icon-btn" onclick="goToday()" title="Vai a oggi">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+            <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── VISTE ──────────────────────────────────────────── -->
+    <main id="main">
+      <section id="view-mese"     class="view active" data-view="mese"></section>
+      <section id="view-anno"     class="view"        data-view="anno"></section>
+      <section id="view-ferie"    class="view"        data-view="ferie"></section>
+      <section id="view-settings" class="view"        data-view="settings"></section>
+    </main>
+
+    <!-- ── BOTTOM NAV ─────────────────────────────────────── -->
+    <nav id="bottom-nav">
+      <button class="nav-item active" data-target="mese" onclick="showView('mese')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        <span>Mese</span>
+      </button>
+      <button class="nav-item" data-target="anno" onclick="showView('anno')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <span>Anno</span>
+      </button>
+      <button class="nav-item" data-target="ferie" onclick="showView('ferie')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 17l4-8 4 4 4-6 4 10"/>
+          <path d="M3 20h18"/>
+        </svg>
+        <span>Ferie</span>
+      </button>
+      <button class="nav-item" data-target="settings" onclick="showView('settings')">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        <span>Config</span>
+      </button>
+    </nav>
+
+  </div><!-- /#app -->
+
+  <!-- ── MODAL (bottom sheet) ────────────────────────────── -->
+  <div id="modal-overlay" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal-sheet">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <div>
+          <div class="modal-date" id="modal-date"></div>
+          <div class="modal-title">Modifica giornata</div>
+        </div>
+        <button class="icon-btn" onclick="closeModal()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="field-group">
+          <label class="field-label">Tipo giornata</label>
+          <select id="m-tipo" class="field-select" onchange="onTipo()">
+            <option value="">— non compilato —</option>
+            <option value="Lavoro">Lavoro</option>
+            <option value="Ferie">Ferie</option>
+            <option value="Festivo">Festivo</option>
+            <option value="Malattia">Malattia</option>
+            <option value="Permesso">Permesso (giornata intera)</option>
+          </select>
+        </div>
+        <div id="modal-work-fields">
+          <div class="time-grid">
+            <div class="field-group">
+              <label class="field-label">Entrata</label>
+              <input type="time" id="m-e" class="field-input">
+            </div>
+            <div class="field-group">
+              <label class="field-label">Usc. Pranzo</label>
+              <input type="time" id="m-up" class="field-input">
+            </div>
+            <div class="field-group">
+              <label class="field-label">Rient. Pranzo</label>
+              <input type="time" id="m-rp" class="field-input">
+            </div>
+            <div class="field-group">
+              <label class="field-label">Uscita</label>
+              <input type="time" id="m-u" class="field-input">
+            </div>
+          </div>
+          <div class="absence-section" id="modal-absence-section">
+            <div class="absence-title">Assenze parziali</div>
+            <div class="time-grid">
+              <div class="field-group">
+                <label class="field-label">Ore permesso</label>
+                <input type="number" id="m-perm" class="field-input" step="0.25" min="0" max="8" placeholder="0">
+              </div>
+              <div class="field-group">
+                <label class="field-label">Ore ferie</label>
+                <input type="number" id="m-fer" class="field-input" step="0.25" min="0" max="8" placeholder="0">
+              </div>
+            </div>
+            <p class="field-hint">Ore di assenza parziale in giornata lavorativa, scalate dal saldo automaticamente.</p>
+          </div>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Note</label>
+          <input type="text" id="m-note" class="field-input" placeholder="Visita medica, corso…">
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-danger" onclick="delDay()">Elimina</button>
+        <div class="modal-actions-right">
+          <button class="btn btn-ghost" onclick="closeModal()">Annulla</button>
+          <button class="btn btn-primary" onclick="saveDay()">Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TOAST ───────────────────────────────────────────── -->
+  <div id="toast" class="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   js/utils/time.js — Funzioni di conversione orari
+   Modifica qui: formati di visualizzazione ore, arrotondamenti
+   ═══════════════════════════════════════════════════════════════ */
+
+/** "HH:MM" → minuti (intero) oppure null */
+function t2m(t) {
+  if (!t) return null;
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/** minuti → stringa "HH:MM", con segno opzionale */
+function m2t(m, sign = false) {
+  if (m == null || isNaN(m)) return '—';
+  const neg = m < 0, a = Math.abs(m);
+  const h = Math.floor(a / 60), mn = a % 60;
+  const prefix = sign ? (neg ? '−' : '+') : (neg ? '−' : '');
+  return prefix + String(h).padStart(2, '0') + ':' + String(mn).padStart(2, '0');
+}
+
+/** Ore decimali → "Xh Ym" */
+function h2display(h) {
+  if (h == null || isNaN(h)) return '—';
+  const neg = h < 0, a = Math.abs(h);
+  const hh = Math.floor(a), mm = Math.round((a - hh) * 60);
+  let s = (neg ? '−' : '') + hh + 'h';
+  if (mm > 0) s += ' ' + mm + 'm';
+  return s;
+}
+
+/** Ore decimali → giorni con resto, es. "2g 4h" */
+function h2days(hours, hoursPerDay = 8) {
+  if (hours == null || isNaN(hours)) return '—';
+  const neg = hours < 0, a = Math.abs(hours);
+  const days = Math.floor(a / hoursPerDay);
+  const rem  = Math.round((a - days * hoursPerDay) * 10) / 10;
+  let s = neg ? '−' : '';
+  if (days > 0) s += days + 'g';
+  if (rem  > 0) s += (days > 0 ? ' ' : '') + rem + 'h';
+  if (days === 0 && rem === 0) s += '0g';
+  return s;
+}
+
+/** Arrotonda ore a 2 decimali */
+function hRound(h) {
+  return Math.round(h * 100) / 100;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/utils/date.js — Funzioni di utilità per le date
+   Modifica qui: logica settimane ISO, calcolo giorni nel mese
+   ═══════════════════════════════════════════════════════════════ */
+
+/** y, m, d → chiave storage "YYYY-MM-DD" */
+function dk(y, m, d) {
+  return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** È weekend? */
+function isWE(y, m, d) {
+  const w = new Date(y, m - 1, d).getDay();
+  return w === 0 || w === 6;
+}
+
+/** Giorni nel mese */
+function dim(y, m) {
+  return new Date(y, m, 0).getDate();
+}
+
+/** Numero settimana ISO + anno ISO */
+function isoWk(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const y1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return {
+    wn: Math.ceil((((d - y1) / 86400000) + 1) / 7),
+    wy: d.getUTCFullYear()
+  };
+}
+
+/**
+ * Restituisce tutte le settimane ISO del mese,
+ * ognuna con i 7 giorni completi (lun→dom).
+ * I giorni fuori mese hanno om=true.
+ */
+function weeksForMonth(y, m) {
+  const wkMap = {};
+
+  // Trova le settimane ISO coinvolte dal mese
+  for (let d = 1; d <= dim(y, m); d++) {
+    const dt = new Date(y, m - 1, d);
+    const { wn, wy } = isoWk(dt);
+    const k = `${wy}-${String(wn).padStart(2, '0')}`;
+    if (!wkMap[k]) wkMap[k] = { wn, wy, days: [] };
+  }
+
+  // Per ogni settimana, genera tutti e 7 i giorni partendo dal lunedì
+  Object.values(wkMap).forEach(wk => {
+    for (let d = 1; d <= dim(y, m); d++) {
+      const dt = new Date(y, m - 1, d);
+      const { wn, wy } = isoWk(dt);
+      if (wn === wk.wn && wy === wk.wy) {
+        const dow = dt.getDay() || 7; // 1=lun … 7=dom
+        const mon = new Date(dt);
+        mon.setDate(dt.getDate() - (dow - 1));
+        for (let i = 0; i < 7; i++) {
+          const day = new Date(mon);
+          day.setDate(mon.getDate() + i);
+          const dy = day.getFullYear(), dm = day.getMonth() + 1, dd = day.getDate();
+          wk.days.push({ date: day, y: dy, m: dm, d: dd, om: !(dy === y && dm === m) });
+        }
+        break;
+      }
+    }
+  });
+
+  return Object.entries(wkMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, v]) => v);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/core/constants.js — Costanti globali: locale e contratto
+   Modifica qui: nomi mesi/giorni, ore contratto, saldo iniziale
+   ═══════════════════════════════════════════════════════════════ */
+
+// ─── VERSIONE APP ─────────────────────────────────────────────
+// Deve corrispondere a APP_VERSION in sw.js
+const APP_VERSION = '1.0.0';
+const DI       = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+const DI_SHORT = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
+const MI       = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+                  'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+const MI_SHORT = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+
+// ─── CONTRATTO ────────────────────────────────────────────────
+// Maturazione mensile da busta paga (160h/anno = 20gg ferie, 88h/anno = 11gg permessi)
+const FER_MESE  = 13.33333;  // ore ferie maturate per mese
+const PERM_MESE =  7.33333;  // ore permessi maturati per mese
+const ORE_GIORNATA = 8;      // ore per giornata intera contrattuale
+
+// ─── SALDO INIZIALE ───────────────────────────────────────────
+// Punto di partenza: busta paga Febbraio 2026, riferita a Gennaio 2026
+// Ferie:    Res.AP -2.16667  + Mat 13.33333  − God 16.00000  = -4.83334
+// Permessi: Res.AP 188.83333 + Mat  7.33333  − God  1.50000  = 194.66666
+const FER_SALDO_GEN26  =  -4.83334;
+const PERM_SALDO_GEN26 = 194.66666;
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/core/storage.js — Accesso al localStorage
+   • Migrazione automatica tra versioni delle chiavi storage
+   • Merge dei SEED senza sovrascrivere i dati utente
+   • Backup automatico prima di ogni migrazione
+   ═══════════════════════════════════════════════════════════════ */
+
+// ─── VERSIONE CORRENTE ────────────────────────────────────────
+// Incrementa DATA_VERSION ogni volta che cambi struttura o SEED.
+// La migrazione avviene automaticamente al prossimo avvio.
+const DATA_VERSION = 5;
+
+// ─── CHIAVI STORAGE ───────────────────────────────────────────
+const SK      = `pres_v${DATA_VERSION}`;    // presenze
+const CK      = `cfg_v${DATA_VERSION}`;     // configurazione
+const VK      = 'presenze_data_version';    // numero versione salvata
+const BK_PRE  = 'presenze_backup_v';        // prefisso backup (es. presenze_backup_v4)
+
+// ─── CHIAVI DELLE VERSIONI PRECEDENTI ─────────────────────────
+// Aggiungi qui le chiavi delle versioni passate in ordine decrescente.
+// Servono per trovare i dati dell'utente quando si migra.
+const OLD_KEYS = [
+  { sk: 'pres_v4', ck: 'cfg_v4', v: 4 },
+  { sk: 'pres_v3', ck: 'cfg_v3', v: 3 },
+  { sk: 'pres_v2', ck: 'cfg_v2', v: 2 },
+  { sk: 'pres_v1', ck: 'cfg_v1', v: 1 },
+];
+
+// ─── FUNZIONI STORAGE BASE ────────────────────────────────────
+function loadData()   { try { return JSON.parse(localStorage.getItem(SK))  || {}; } catch { return {}; } }
+function saveData(d)  { localStorage.setItem(SK, JSON.stringify(d)); }
+function loadConfig() { try { return JSON.parse(localStorage.getItem(CK)) || {}; } catch { return {}; } }
+function getConfig()  { return { std: loadConfig().std || '08:00' }; }
+
+function saveConfig() {
+  const el  = document.getElementById('cfg-std');
+  const val = (el && el.value) ? el.value : '08:00';
+  localStorage.setItem(CK, JSON.stringify({ std: val }));
+}
+
+// ─── BACKUP ───────────────────────────────────────────────────
+/** Salva una copia di sicurezza dei dati prima di una migrazione */
+function backupData(fromVersion, data, config) {
+  const bk = {
+    timestamp: new Date().toISOString(),
+    fromVersion,
+    data,
+    config,
+  };
+  try {
+    localStorage.setItem(BK_PRE + fromVersion, JSON.stringify(bk));
+  } catch (e) {
+    // localStorage pieno: ignora silenziosamente il backup
+    console.warn('Backup pre-migrazione non riuscito (localStorage pieno?):', e);
+  }
+}
+
+/** Restituisce il backup di una versione (o null) */
+function loadBackup(version) {
+  try {
+    return JSON.parse(localStorage.getItem(BK_PRE + version)) || null;
+  } catch { return null; }
+}
+
+// ─── MIGRAZIONE ───────────────────────────────────────────────
+/**
+ * Cerca dati in chiavi vecchie, fa il backup, li migra nella chiave corrente.
+ * Ritorna { migrated: bool, fromVersion: number|null }
+ */
+function migrateIfNeeded() {
+  const savedVersion = parseInt(localStorage.getItem(VK) || '0', 10);
+
+  // Già alla versione corrente: niente da fare
+  if (savedVersion === DATA_VERSION && localStorage.getItem(SK)) {
+    return { migrated: false, fromVersion: null };
+  }
+
+  // Cerca dati nelle chiavi vecchie (dal più recente al più antico)
+  for (const old of OLD_KEYS) {
+    const raw = localStorage.getItem(old.sk);
+    if (!raw) continue;
+
+    let oldData = {};
+    try { oldData = JSON.parse(raw) || {}; } catch { continue; }
+    const oldConfig = (() => { try { return JSON.parse(localStorage.getItem(old.ck)) || {}; } catch { return {}; } })();
+
+    // Backup prima di migrare
+    backupData(old.v, oldData, oldConfig);
+
+    // Copia dati → nuova chiave (solo se la nuova chiave è vuota o ha solo SEED)
+    const existing = loadData();
+    const merged   = { ...oldData, ...existing }; // i dati utente già presenti vincono
+    saveData(merged);
+
+    // Copia config → nuova chiave
+    if (!localStorage.getItem(CK) && oldConfig.std) {
+      localStorage.setItem(CK, JSON.stringify({ std: oldConfig.std }));
+    }
+
+    // Segna versione corrente
+    localStorage.setItem(VK, String(DATA_VERSION));
+
+    console.info(`[Presenze] Migrazione v${old.v} → v${DATA_VERSION} completata.`);
+    return { migrated: true, fromVersion: old.v };
+  }
+
+  // Nessun dato precedente trovato: primo avvio
+  localStorage.setItem(VK, String(DATA_VERSION));
+  return { migrated: false, fromVersion: null };
+}
+
+// ─── SEED DATA ────────────────────────────────────────────────
+// Dati storici caricati al primo avvio (importati dall'Excel originale).
+// Le chiavi presenti nel SEED ma assenti nei dati utente vengono aggiunte.
+// Le chiavi già presenti nei dati utente NON vengono mai sovrascritte.
+const SEED = {
+  "2026-01-01":{"t":"Festivo","n":"Azienda Chiusa"},
+  "2026-01-02":{"t":"Ferie","n":"Azienda Chiusa"},
+  "2026-01-05":{"t":"Ferie","n":"Azienda Chiusa"},
+  "2026-01-06":{"t":"Festivo","n":"Azienda Chiusa"},
+  "2026-01-07":{"t":"Lavoro","e":"08:50","up":"13:00","rp":"13:30","u":"18:11"},
+  "2026-01-08":{"t":"Lavoro","e":"08:47","up":"13:19","rp":"13:50","u":"18:20"},
+  "2026-01-09":{"t":"Lavoro","e":"08:51","up":"13:22","rp":"13:52","u":"18:10"},
+  "2026-01-12":{"t":"Lavoro","e":"08:56","up":"13:28","rp":"14:08","u":"18:05"},
+  "2026-01-13":{"t":"Lavoro","e":"08:45","up":"13:16","rp":"13:50","u":"17:42"},
+  "2026-01-14":{"t":"Lavoro","e":"08:44","up":"13:18","rp":"13:58","u":"16:55","n":"Permesso 30m per Vladi Impresa","po":0.5},
+  "2026-01-15":{"t":"Lavoro","e":"08:44","up":"13:03","rp":"13:33","u":"17:45"},
+  "2026-01-16":{"t":"Lavoro","e":"08:45","up":"13:15","rp":"14:00","u":"17:31"},
+  "2026-01-19":{"t":"Lavoro","e":"08:45","up":"13:00","rp":"13:46","u":"17:32"},
+  "2026-01-20":{"t":"Lavoro","e":"08:50","up":"13:38","rp":"14:18","u":"17:31"},
+  "2026-01-21":{"t":"Lavoro","e":"08:42","up":"13:06","rp":"13:36","u":"17:45"},
+  "2026-01-22":{"t":"Lavoro","e":"08:47","up":"13:53","rp":"14:23","u":"17:46"},
+  "2026-01-23":{"t":"Lavoro","e":"08:47","up":"13:19","rp":"13:49","u":"17:50"},
+  "2026-01-26":{"t":"Lavoro","e":"08:47","up":"13:14","rp":"14:00","u":"17:40"},
+  "2026-01-27":{"t":"Lavoro","e":"08:38","up":"13:12","rp":"13:50","u":"17:40"},
+  "2026-01-28":{"t":"Lavoro","e":"08:43","up":"13:00","rp":"13:01","u":"15:45","n":"Permesso 1h, Mannu India","po":1.0},
+  "2026-01-29":{"t":"Lavoro","e":"08:51","up":"13:35","rp":"14:10","u":"18:03"},
+  "2026-01-30":{"t":"Lavoro","e":"08:56","up":"13:06","rp":"13:40","u":"18:00"},
+  "2026-02-02":{"t":"Lavoro","e":"08:41","up":"13:25","rp":"14:00","u":"17:30"},
+  "2026-02-03":{"t":"Lavoro","e":"08:52","up":"13:00","rp":"13:40","u":"17:40"},
+  "2026-02-04":{"t":"Lavoro","e":"08:52","up":"13:10","rp":"13:50","u":"18:36"},
+  "2026-02-05":{"t":"Lavoro","e":"08:52","up":"13:22","rp":"14:08","u":"17:40"},
+  "2026-02-06":{"t":"Lavoro","e":"08:47","up":"13:18","rp":"14:00","u":"17:30"},
+  "2026-02-09":{"t":"Lavoro","e":"08:53","up":"14:00","rp":"14:40","u":"18:00"},
+  "2026-02-10":{"t":"Lavoro","e":"08:53","up":"13:10","rp":"13:40","u":"17:50"},
+  "2026-02-11":{"t":"Lavoro","e":"08:48","up":"12:37","rp":"13:10","u":"17:25"},
+  "2026-02-12":{"t":"Lavoro","e":"08:49","up":"13:08","rp":"13:45","u":"17:57"},
+  "2026-02-13":{"t":"Lavoro","e":"08:54","up":"13:00","rp":"13:01","u":"16:00","n":"Permesso Ritiro Auto - Cupra","po":0.91667},
+  "2026-02-16":{"t":"Lavoro","e":"08:57","up":"13:10","rp":"13:58","u":"19:53"},
+  "2026-02-17":{"t":"Lavoro","e":"08:51","up":"13:06","rp":"13:36","u":"17:30"},
+  "2026-02-18":{"t":"Lavoro","e":"08:55","up":"13:00","rp":"13:35","u":"17:48"},
+  "2026-02-19":{"t":"Lavoro","e":"08:49","up":"13:15","rp":"13:50","u":"17:30"},
+  "2026-02-20":{"t":"Lavoro","e":"08:50","up":"13:35","rp":"14:18","u":"17:35"},
+  "2026-02-23":{"t":"Lavoro","e":"08:57","up":"13:05","rp":"13:58","u":"17:55"},
+  "2026-02-24":{"t":"Lavoro","e":"09:56","up":"13:00","rp":"13:01","u":"18:10"},
+  "2026-02-25":{"t":"Lavoro","e":"08:46","up":"13:10","rp":"13:45","u":"17:40"},
+  "2026-02-26":{"t":"Lavoro","e":"08:49","up":"13:20","rp":"13:50","u":"18:00"},
+  "2026-02-27":{"t":"Lavoro","e":"08:48","up":"13:00","rp":"13:30","u":"17:50"},
+  "2026-03-02":{"t":"Lavoro","e":"08:51","up":"13:10","rp":"13:45","u":"17:30"},
+  "2026-03-03":{"t":"Lavoro","e":"08:50","up":"13:25","rp":"14:00","u":"17:30"},
+  "2026-03-04":{"t":"Lavoro","e":"08:41","up":"13:00","rp":"13:35","u":"17:20"},
+};
+
+/**
+ * Merge intelligente dei SEED:
+ * • Aggiunge le chiavi SEED mancanti nei dati utente (es. nuovi giorni storici aggiunti)
+ * • Non sovrascrive MAI i dati già inseriti dall'utente
+ * • Ritorna il numero di chiavi SEED aggiunte
+ */
+function mergeSeed(data) {
+  let added = 0;
+  for (const [k, v] of Object.entries(SEED)) {
+    if (!(k in data)) {
+      data[k] = v;
+      added++;
+    }
+  }
+  return added;
+}
+
+/** SEED_VERSION: incrementa quando aggiungi nuove righe al SEED */
+const SEED_VERSION = 1;
+const SVK = 'presenze_seed_version';
+
+function initData() {
+  const savedSeedV = parseInt(localStorage.getItem(SVK) || '0', 10);
+  const data = loadData();
+
+  // Primo avvio: carica tutto il SEED
+  if (!Object.keys(data).length) {
+    saveData({ ...SEED });
+    localStorage.setItem(SVK, String(SEED_VERSION));
+    return;
+  }
+
+  // SEED aggiornato: merge non-distruttivo
+  if (savedSeedV < SEED_VERSION) {
+    const added = mergeSeed(data);
+    saveData(data);
+    localStorage.setItem(SVK, String(SEED_VERSION));
+    if (added > 0) {
+      console.info(`[Presenze] Seed aggiornato: ${added} nuove voci aggiunte.`);
+    }
+  }
+}
+
+function clearAll() {
+  if (!confirm('Sei sicuro? Tutti i dati verranno eliminati definitivamente.')) return;
+  localStorage.removeItem(SK);
+  renderAll();
+  showToast('Dati eliminati');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/core/engine.js — Calcoli business logic
+   Modifica qui: come si calcolano ore lavorate, saldi ferie/permessi
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Minuti lavorati in una giornata, oppure null */
+function oreG(r) {
+  if (!r || r.t !== 'Lavoro') return null;
+  const e = t2m(r.e), up = t2m(r.up), rp = t2m(r.rp), u = t2m(r.u);
+  if (e == null || u == null) return null;
+  let tot = u - e;
+  if (up != null && rp != null) tot -= (rp - up);
+  return tot;
+}
+
+/** Delta rispetto allo standard (minuti) */
+function dltG(r, std) {
+  const o = oreG(r);
+  if (o == null) return null;
+  return o - std;
+}
+
+/** Ore ferie/permessi godute in un mese, fino a upToDay incluso */
+function godutoMese(y, m, upToDay, data) {
+  let fG = 0, pG = 0;
+  const lim = upToDay ?? dim(y, m);
+  for (let d = 1; d <= lim; d++) {
+    const r = data[dk(y, m, d)];
+    if (!r) continue;
+    if (r.t === 'Ferie')    fG += ORE_GIORNATA;
+    if (r.t === 'Permesso') pG += ORE_GIORNATA;
+    if (r.t === 'Lavoro') {
+      if (r.po) pG += parseFloat(r.po) || 0;
+      if (r.fo) fG += parseFloat(r.fo) || 0;
+    }
+  }
+  return { fG, pG };
+}
+
+/**
+ * Calcola ferie & permessi mese per mese da Feb 2026 fino a (toY, toM).
+ * Se toToday=true e (toY,toM) è il mese corrente:
+ *   - maturazione proporzionale ai giorni passati
+ *   - goduto conta solo fino ad oggi incluso
+ */
+function calcFP(toY, toM, toToday = false) {
+  const today = new Date();
+  const data  = loadData();
+  let fS = FER_SALDO_GEN26, pS = PERM_SALDO_GEN26;
+  if (toY < 2026 || (toY === 2026 && toM < 2)) return { fS, pS, months: [] };
+
+  const months = [];
+  let y = 2026, m = 2;
+
+  while (y < toY || (y === toY && m <= toM)) {
+    const isLast  = y === toY && m === toM;
+    const isCurr  = y === today.getFullYear() && m === today.getMonth() + 1;
+    const partial = isLast && toToday && isCurr;
+
+    let fMat = FER_MESE, pMat = PERM_MESE, upToDay = null;
+
+    if (partial) {
+      const nd   = dim(y, m);
+      const gone = today.getDate();
+      fMat     = FER_MESE  * (gone / nd);
+      pMat     = PERM_MESE * (gone / nd);
+      upToDay  = today.getDate();
+    }
+
+    const { fG, pG } = godutoMese(y, m, upToDay, data);
+    const fAP = fS, pAP = pS;
+    fS = fAP + fMat - fG;
+    pS = pAP + pMat - pG;
+    months.push({ y, m, fAP, fMat, fG, fS, pAP, pMat, pG, pS, partial });
+
+    if (++m > 12) { m = 1; y++; }
+  }
+
+  return { fS, pS, months };
+}
+
+/** Dati storici Gennaio 2026 da busta paga (statici) */
+function getFPJan2026() {
+  return {
+    fer: { ap: -2.16667,   mat: 13.33333, god: 16.0,  saldo: -4.83334  },
+    per: { ap: 188.83333, mat:  7.33333, god:  1.5,  saldo: 194.66666 }
+  };
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/components/icons.js — Icone SVG inline
+   Modifica qui: cambia qualsiasi icona dell'app tutta in un posto
+   ═══════════════════════════════════════════════════════════════ */
+
+const Icons = {
+
+  sun: (size = 13) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="2"    x2="12" y2="4"/>
+      <line x1="12" y1="20"   x2="12" y2="22"/>
+      <line x1="4.22" y1="4.22"   x2="5.64"  y2="5.64"/>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="2"  y1="12" x2="4"  y2="12"/>
+      <line x1="20" y1="12" x2="22" y2="12"/>
+      <line x1="4.22"  y1="19.78" x2="5.64"  y2="18.36"/>
+      <line x1="18.36" y1="5.64"  x2="19.78" y2="4.22"/>
+    </svg>`,
+
+  clock: (size = 13) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <circle cx="12" cy="12" r="10"/>
+      <polyline points="12 6 12 12 16 14"/>
+    </svg>`,
+
+  download: (size = 15) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>`,
+
+  upload: (size = 15) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/>
+      <line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>`,
+
+  chevronLeft: (size = 14) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>`,
+
+  chevronRight: (size = 14) => `
+    <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <polyline points="9 18 15 12 9 6"/>
+    </svg>`,
+
+};
+
+// Alias per compatibilità (usati nelle viste)
+const svgSun      = () => Icons.sun();
+const svgClock    = () => Icons.clock();
+const svgDownload = () => Icons.download();
+const svgUpload   = () => Icons.upload();
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/components/fpcard.js — Componente card ferie/permessi
+   Usato da: views/mese.js e views/ferie.js
+   Modifica qui: layout e contenuto della card FP mensile
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Genera l'HTML di una card ferie o permessi.
+ * @param {string}  type       — 'fer' | 'per'
+ * @param {string}  badge      — testo del badge (es. "fine mese")
+ * @param {number}  ap         — residuo anno precedente
+ * @param {number}  mat        — maturato nel periodo
+ * @param {number}  god        — goduto nel periodo
+ * @param {number}  saldo      — saldo finale
+ * @param {boolean} isHistoric — se true mostra nota busta paga
+ */
+function renderFPCard(type, badge, ap, mat, god, saldo, isHistoric = false) {
+  const isFer      = type === 'fer';
+  const saldoColor = saldo >= 0 ? (isFer ? 'c-amber' : 'c-teal') : 'c-red';
+  const matColor   = isFer ? 'c-amber' : 'c-teal';
+  const icon       = isFer ? Icons.sun() : Icons.clock();
+
+  const saldoDays    = saldo / ORE_GIORNATA;
+  const saldoDaysStr = (saldo >= 0 ? '+' : '−') + Math.abs(saldoDays).toFixed(1) + 'g';
+
+  return `
+    <div class="fp-card ${type}">
+      <div class="fp-card-title">
+        ${icon}
+        ${isFer ? 'Ferie' : 'Permessi'}
+        <span class="fp-badge">${badge}</span>
+      </div>
+      <div class="fp-stats">
+        <div class="fp-stat">
+          <span class="v c-muted">${hRound(ap).toFixed(2)}h</span>
+          <span class="k">Res. AP</span>
+        </div>
+        <div class="fp-stat">
+          <span class="v ${matColor}">${hRound(mat).toFixed(2)}h</span>
+          <span class="k">Maturato</span>
+        </div>
+        <div class="fp-stat">
+          <span class="v c-red">${hRound(god).toFixed(2)}h</span>
+          <span class="k">Goduto</span>
+        </div>
+        <div class="fp-stat">
+          <span class="v ${saldoColor}" style="font-size:1rem">${hRound(saldo).toFixed(2)}h</span>
+          <span class="k">Saldo ore</span>
+        </div>
+      </div>
+      <div class="fp-saldo-row">
+        <span class="label">Saldo giorni</span>
+        <span class="value ${saldoColor}">${saldoDaysStr}</span>
+      </div>
+      ${isHistoric ? '<div class="fp-note">Dati dalla busta paga Feb 2026 (rif. Gen 2026).</div>' : ''}
+    </div>`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/components/modal.js — Modal modifica giornata
+   Modifica qui: campi del form, validazione, salvataggio
+   ═══════════════════════════════════════════════════════════════ */
+
+/** Apre il modal per la data con chiave key (YYYY-MM-DD) */
+function openModal(key) {
+  eKey = key;
+  const data = loadData(), r = data[key] || {};
+  const [y, m, d] = key.split('-').map(Number);
+  const dw = new Date(y, m - 1, d).getDay();
+
+  document.getElementById('modal-date').textContent = `${DI[dw]}, ${d} ${MI[m - 1]} ${y}`;
+  document.getElementById('m-tipo').value  = r.t  || '';
+  document.getElementById('m-e').value    = r.e   || '';
+  document.getElementById('m-up').value   = r.up  || '';
+  document.getElementById('m-rp').value   = r.rp  || '';
+  document.getElementById('m-u').value    = r.u   || '';
+  document.getElementById('m-note').value = r.n   || '';
+  document.getElementById('m-perm').value = r.po  || '';
+  document.getElementById('m-fer').value  = r.fo  || '';
+
+  onTipo();
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+/** Mostra/nasconde i campi lavoro in base al tipo selezionato */
+function onTipo() {
+  const t  = document.getElementById('m-tipo').value;
+  const wf = document.getElementById('modal-work-fields');
+  const ab = document.getElementById('modal-absence-section');
+  const show = t === 'Lavoro';
+  wf.style.display = show ? '' : 'none';
+  if (ab) ab.style.display = show ? '' : 'none';
+}
+
+/** Chiude il modal */
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  eKey = null;
+}
+
+/** Salva i dati del giorno correntemente in modifica */
+function saveDay() {
+  if (!eKey) return;
+  const t    = document.getElementById('m-tipo').value;
+  const data = loadData();
+
+  if (!t) {
+    delete data[eKey];
+  } else {
+    const r = { t };
+    if (t === 'Lavoro') {
+      const e  = document.getElementById('m-e').value;
+      const up = document.getElementById('m-up').value;
+      const rp = document.getElementById('m-rp').value;
+      const u  = document.getElementById('m-u').value;
+      if (e)  r.e  = e;
+      if (up) r.up = up;
+      if (rp) r.rp = rp;
+      if (u)  r.u  = u;
+      const po = parseFloat(document.getElementById('m-perm').value);
+      const fo = parseFloat(document.getElementById('m-fer').value);
+      if (po > 0) r.po = po;
+      if (fo > 0) r.fo = fo;
+    }
+    const n = document.getElementById('m-note').value.trim();
+    if (n) r.n = n;
+    data[eKey] = r;
+  }
+
+  saveData(data);
+  closeModal();
+  renderAll();
+  showToast('Salvato', 'success');
+}
+
+/** Elimina la giornata corrente */
+function delDay() {
+  if (!eKey) return;
+  const data = loadData();
+  delete data[eKey];
+  saveData(data);
+  closeModal();
+  renderAll();
+  showToast('Eliminato');
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/views/mese.js — Vista mensile
+   Modifica qui: layout mese, quick bar, righe giorno, pannello FP
+   ═══════════════════════════════════════════════════════════════ */
+
+function renderMese() {
+  const cfg = getConfig(), std = t2m(cfg.std) || 480, data = loadData();
+  const now  = new Date();
+  const todayKey = dk(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  const isNow    = cY === now.getFullYear() && cM === now.getMonth() + 1;
+  const el       = document.getElementById('view-mese');
+
+  document.getElementById('header-subtitle').textContent = `${MI[cM - 1]} ${cY}`;
+
+  // ── Calcolo statistiche mensili ────────────────────────────
+  let totO = 0, ggL = 0, str = 0, deb = 0, ferD = 0, malD = 0, permD = 0;
+  for (let d = 1; d <= dim(cY, cM); d++) {
+    const r = data[dk(cY, cM, d)];
+    if (!r) continue;
+    const o = oreG(r), dl = dltG(r, std);
+    if (r.t === 'Lavoro' && o != null) {
+      totO += o; ggL++;
+      if (dl > 0) str += dl; else if (dl < 0) deb += dl;
+    }
+    if (r.t === 'Ferie')    ferD++;
+    if (r.t === 'Malattia') malD++;
+    if (r.t === 'Permesso') permD++;
+  }
+  const saldo = str + deb;
+
+  // ── Stat cards ─────────────────────────────────────────────
+  const absRow = (ferD > 0 || malD > 0 || permD > 0) ? `
+    <div class="stat-card" style="grid-column:1/-1">
+      <div class="stat-label">Assenze questo mese</div>
+      <div style="display:flex;gap:16px;margin-top:4px">
+        ${ferD  > 0 ? `<div><span class="stat-value c-amber" style="font-size:.95rem">${ferD}</span>  <span class="stat-sub">ferie</span></div>` : ''}
+        ${permD > 0 ? `<div><span class="stat-value c-teal"  style="font-size:.95rem">${permD}</span> <span class="stat-sub">permesso</span></div>` : ''}
+        ${malD  > 0 ? `<div><span class="stat-value c-red"   style="font-size:.95rem">${malD}</span>  <span class="stat-sub">malattia</span></div>` : ''}
+      </div>
+    </div>` : '';
+
+  const statCards = `
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Ore lavorate</div>
+        <div class="stat-value c-blue">${m2t(totO)}</div>
+        <div class="stat-sub">${ggL} giorni</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Saldo ore</div>
+        <div class="stat-value ${saldo >= 0 ? 'c-green' : 'c-red'}">${m2t(saldo, true)}</div>
+        <div class="stat-sub">${m2t(str, true)} str. / ${m2t(deb, true)} deb.</div>
+      </div>
+      ${absRow}
+    </div>`;
+
+  // ── FP Panel ───────────────────────────────────────────────
+  let fpHtml = '';
+  if (cY === 2026 && cM === 1) {
+    const j = getFPJan2026();
+    fpHtml = `<div class="fp-grid">
+      ${renderFPCard('fer', 'busta paga Gen', j.fer.ap, j.fer.mat, j.fer.god, j.fer.saldo, true)}
+      ${renderFPCard('per', 'busta paga Gen', j.per.ap, j.per.mat, j.per.god, j.per.saldo, true)}
+    </div>`;
+  } else if (cY > 2026 || (cY === 2026 && cM >= 2)) {
+    const fp  = calcFP(cY, cM, isNow);
+    const cur = fp.months[fp.months.length - 1];
+    if (cur) {
+      const lbl = cur.partial
+        ? `ad oggi ${now.getDate()} ${MI_SHORT[cM - 1]}`
+        : 'fine mese';
+      fpHtml = `<div class="fp-grid">
+        ${renderFPCard('fer', lbl, cur.fAP, cur.fMat, cur.fG, cur.fS)}
+        ${renderFPCard('per', lbl, cur.pAP, cur.pMat, cur.pG, cur.pS)}
+      </div>`;
+    }
+  }
+
+  // ── Quick bar (solo mese corrente) ─────────────────────────
+  const qbarHtml = isNow ? `
+    <div class="quick-bar">
+      <div class="quick-bar-label">
+        Inserimento rapido — ${DI[now.getDay()]}, ${now.getDate()} ${MI[now.getMonth()]} ${now.getFullYear()}
+      </div>
+      <div class="quick-inputs">
+        <div class="quick-field"><label>Entrata</label><input type="time" id="q-e" value="08:45"></div>
+        <div class="quick-field"><label>Usc. Pranzo</label><input type="time" id="q-up" value="13:00"></div>
+        <div class="quick-field"><label>Rient. Pr.</label><input type="time" id="q-rp" value="13:30"></div>
+        <div class="quick-field"><label>Uscita</label><input type="time" id="q-u" value="17:30"></div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="quickSave()">Salva</button>
+    </div>` : '';
+
+  // ── Settimane ──────────────────────────────────────────────
+  const weeks = weeksForMonth(cY, cM);
+  const { wn: todayWn, wy: todayWy } = isoWk(now);
+
+  const weeksHtml = weeks.map(wk => {
+    const isCur = wk.wn === todayWn && wk.wy === todayWy;
+    let wO = 0, wDl = 0;
+    wk.days.filter(x => !x.om).forEach(({ y, m, d }) => {
+      const r = data[dk(y, m, d)];
+      const o = oreG(r), dl = dltG(r, std);
+      if (o != null) { wO += o; wDl += dl || 0; }
+    });
+    const extraMonths = [...new Set(wk.days.filter(x => x.om).map(x => MI_SHORT[x.m - 1]))].join(', ');
+
+    const daysHtml = wk.days.map(({ date, y, m, d, om }) => {
+      const we      = isWE(y, m, d);
+      const r       = data[dk(y, m, d)];
+      const o       = oreG(r);
+      const dl      = dltG(r, std);
+      const isToday = dk(y, m, d) === todayKey;
+      const tipo    = we ? 'Weekend' : (r?.t || '');
+
+      const badgeMap  = { Lavoro:'badge-lavoro', Ferie:'badge-ferie', Festivo:'badge-festivo',
+                          Malattia:'badge-malattia', Permesso:'badge-permesso' };
+      const badgeCls  = badgeMap[tipo] || '';
+
+      const rowClass = [
+        'day-row',
+        we      ? 'weekend'      : '',
+        isToday ? 'today'        : '',
+        om      ? 'other-month'  : '',
+        r?.t === 'Ferie'    ? 'ferie-row'   : '',
+        r?.t === 'Permesso' ? 'permesso-row': ''
+      ].filter(Boolean).join(' ');
+
+      const dateLabel = om
+        ? `<span>${d} <span style="color:var(--text-tertiary)">${MI_SHORT[m - 1]}</span></span>`
+        : `<strong>${d}</strong> <span style="color:var(--text-tertiary);font-size:.7rem">${DI_SHORT[date.getDay()]}</span>`;
+
+      const timesStr = r?.e ? `${r.e}→${r.u || '?'}` : '';
+      const noteStr  = r?.n || '';
+
+      let absStr = '';
+      if (r?.po) absStr += `<span class="c-teal">${parseFloat(r.po).toFixed(2)}h P</span> `;
+      if (r?.fo) absStr += `<span class="c-amber">${parseFloat(r.fo).toFixed(2)}h F</span>`;
+
+      const deltaClass = dl == null ? '' : dl > 0 ? 'pos' : dl < 0 ? 'neg' : 'zer';
+      const deltaHtml  = dl != null ? `<div class="day-delta ${deltaClass}">${m2t(dl, true)}</div>` : '';
+
+      const clickAttr = we ? ''
+        : om ? `onclick="cY=${y};cM=${m};renderMese()"`
+             : `onclick="openModal('${dk(y, m, d)}')"`;
+
+      return `
+        <div class="${rowClass}" ${clickAttr}>
+          <div class="day-date">${dateLabel}</div>
+          <div>${tipo && !we ? `<span class="badge ${badgeCls}">${tipo}</span>` : ''}</div>
+          <div class="day-center">
+            ${timesStr ? `<div class="day-times">${timesStr}${absStr ? ' · ' + absStr : ''}</div>` : (absStr ? `<div class="day-times">${absStr}</div>` : '')}
+            ${noteStr  ? `<div class="day-note">${noteStr}</div>` : ''}
+          </div>
+          <div class="day-right">
+            ${o != null ? `<div class="day-hours">${m2t(o)}</div>` : ''}
+            ${deltaHtml}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="week-block">
+        <div class="week-header${isCur ? ' current' : ''}">
+          <div class="week-num">
+            ${isCur ? '<span class="cur-dot"></span>' : ''}
+            Settimana ${wk.wn}
+            ${extraMonths ? `<span class="week-extra-months">+${extraMonths}</span>` : ''}
+          </div>
+          <div class="week-total">
+            ${m2t(wO)} · <span class="${wDl >= 0 ? 'c-green' : 'c-red'}">${m2t(wDl, true)}</span>
+          </div>
+        </div>
+        <div class="day-rows">${daysHtml}</div>
+      </div>`;
+  }).join('');
+
+  // ── Render finale ──────────────────────────────────────────
+  el.innerHTML = `
+    <div class="month-nav">
+      <button class="nav-btn" onclick="chMonth(-1)">${Icons.chevronLeft()}</button>
+      <h2>${MI[cM - 1]} ${cY}</h2>
+      <button class="nav-btn" onclick="chMonth(1)">${Icons.chevronRight()}</button>
+    </div>
+    ${qbarHtml}
+    ${statCards}
+    ${fpHtml}
+    <div class="section-label">Registro presenze</div>
+    ${weeksHtml}`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/views/anno.js — Vista annuale
+   Modifica qui: griglia mesi, riepilogo FP annuale, statistiche anno
+   ═══════════════════════════════════════════════════════════════ */
+
+function renderAnno() {
+  const cfg  = getConfig(), std = t2m(cfg.std) || 480, data = loadData();
+  const now  = new Date(), isCY = vY === now.getFullYear();
+  const el   = document.getElementById('view-anno');
+
+  document.getElementById('header-subtitle').textContent = String(vY);
+
+  // ── Selezione anno ─────────────────────────────────────────
+  const years = new Set([2026]);
+  Object.keys(data).forEach(k => {
+    const y = parseInt(k);
+    if (y >= 2020 && y <= 2035) years.add(y);
+  });
+  const yearBtns = [...years].sort().map(y =>
+    `<button class="year-btn${y === vY ? ' active' : ''}" onclick="vY=${y};renderAnno()">${y}</button>`
+  ).join('');
+
+  // ── Statistiche annuali ────────────────────────────────────
+  let tO = 0, tG = 0, tS = 0, tD = 0;
+  for (let mo = 1; mo <= 12; mo++) {
+    for (let d = 1; d <= dim(vY, mo); d++) {
+      const r  = data[dk(vY, mo, d)];
+      if (!r || r.t !== 'Lavoro') continue;
+      const o  = oreG(r), dl = dltG(r, std);
+      if (o  != null) { tO += o; tG++; }
+      if (dl != null) { if (dl > 0) tS += dl; else tD += dl; }
+    }
+  }
+  const saldo = tS + tD;
+
+  const statCards = `
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Ore anno</div>
+        <div class="stat-value c-blue">${m2t(tO)}</div>
+        <div class="stat-sub">${tG} giorni lavorati</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Saldo netto</div>
+        <div class="stat-value ${saldo >= 0 ? 'c-green' : 'c-red'}">${m2t(saldo, true)}</div>
+        <div class="stat-sub">${m2t(tS, true)} str. totale</div>
+      </div>
+    </div>`;
+
+  // ── FP annuale ─────────────────────────────────────────────
+  const endMo = isCY ? now.getMonth() + 1 : 12;
+  const fp    = calcFP(vY, endMo, isCY);
+  const last  = fp.months[fp.months.length - 1];
+
+  let annualFpHtml = '';
+  if (last) {
+    const lbl    = isCY ? 'ad oggi' : 'fine anno';
+    const ferMat = fp.months.reduce((a, x) => a + x.fMat, 0);
+    const ferGod = fp.months.reduce((a, x) => a + x.fG,   0);
+    const perMat = fp.months.reduce((a, x) => a + x.pMat, 0);
+    const perGod = fp.months.reduce((a, x) => a + x.pG,   0);
+
+    annualFpHtml = `
+      <div class="annual-fp">
+        <div class="annual-fp-card fer">
+          <h4>Ferie — ${lbl}</h4>
+          <div class="annual-fp-row">
+            <span class="k">Maturato</span>
+            <span class="v c-amber">${hRound(ferMat).toFixed(2)}h &nbsp;(${(ferMat / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>
+          <div class="annual-fp-row">
+            <span class="k">Goduto</span>
+            <span class="v c-red">${hRound(ferGod).toFixed(2)}h &nbsp;(${(ferGod / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>
+          <div class="annual-fp-row">
+            <span class="k">Saldo</span>
+            <span class="v ${last.fS >= 0 ? 'c-amber' : 'c-red'}">
+              ${hRound(last.fS).toFixed(2)}h &nbsp;(${(last.fS / ORE_GIORNATA).toFixed(1)}g)
+            </span>
+          </div>
+        </div>
+        <div class="annual-fp-card per">
+          <h4>Permessi — ${lbl}</h4>
+          <div class="annual-fp-row">
+            <span class="k">Maturato</span>
+            <span class="v c-teal">${hRound(perMat).toFixed(2)}h &nbsp;(${(perMat / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>
+          <div class="annual-fp-row">
+            <span class="k">Goduto</span>
+            <span class="v c-red">${hRound(perGod).toFixed(2)}h &nbsp;(${(perGod / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>
+          <div class="annual-fp-row">
+            <span class="k">Saldo</span>
+            <span class="v ${last.pS >= 0 ? 'c-teal' : 'c-red'}">
+              ${hRound(last.pS).toFixed(2)}h &nbsp;(${(last.pS / ORE_GIORNATA).toFixed(1)}g)
+            </span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Griglia mesi ───────────────────────────────────────────
+  const monthCards = [];
+  for (let mo = 1; mo <= 12; mo++) {
+    let mO = 0, g = 0, s = 0, dv = 0, mFerD = 0, mPermD = 0;
+    for (let d = 1; d <= dim(vY, mo); d++) {
+      const r = data[dk(vY, mo, d)];
+      if (!r) continue;
+      const o = oreG(r), dl = dltG(r, std);
+      if (r.t === 'Lavoro' && o != null) { mO += o; g++; if (dl > 0) s += dl; else if (dl < 0) dv += dl; }
+      if (r.t === 'Ferie')   mFerD++;
+      if (r.t === 'Permesso') mPermD++;
+    }
+    const pct      = g > 0 ? Math.min(100, Math.round(mO / (g * std) * 100)) : 0;
+    const barColor = pct >= 100 ? 'var(--green)' : pct >= 80 ? 'var(--amber)' : 'var(--red)';
+    const mSaldo   = s + dv;
+
+    // FP saldo per il mese
+    let fpRow = '';
+    if (vY > 2026 || (vY === 2026 && mo >= 2)) {
+      const fpM = calcFP(vY, mo, false);
+      const lmx = fpM.months[fpM.months.length - 1];
+      if (lmx) {
+        fpRow = `
+          <div class="month-row">
+            <span class="k">Ferie saldo</span>
+            <span class="v ${lmx.fS >= 0 ? 'c-amber' : 'c-red'}">${hRound(lmx.fS).toFixed(1)}h (${(lmx.fS / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>
+          <div class="month-row">
+            <span class="k">Perm. saldo</span>
+            <span class="v ${lmx.pS >= 0 ? 'c-teal' : 'c-red'}">${hRound(lmx.pS).toFixed(1)}h (${(lmx.pS / ORE_GIORNATA).toFixed(1)}g)</span>
+          </div>`;
+      }
+    }
+
+    monthCards.push(`
+      <div class="month-card" onclick="cM=${mo};cY=${vY};showView('mese')">
+        <h4>${MI[mo - 1]} <span>${g} gg lav.</span></h4>
+        <div class="month-row"><span class="k">Ore lavorate</span><span class="v">${m2t(mO)}</span></div>
+        <div class="month-row"><span class="k">Saldo ore</span><span class="v ${mSaldo >= 0 ? 'c-green' : 'c-red'}">${m2t(mSaldo, true)}</span></div>
+        ${mFerD  > 0 ? `<div class="month-row"><span class="k">Ferie</span><span class="v c-amber">${mFerD} gg</span></div>` : ''}
+        ${mPermD > 0 ? `<div class="month-row"><span class="k">Permessi</span><span class="v c-teal">${mPermD} gg</span></div>` : ''}
+        ${fpRow}
+        <div class="month-bar-track">
+          <div class="month-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+        </div>
+      </div>`);
+  }
+
+  // ── Render finale ──────────────────────────────────────────
+  el.innerHTML = `
+    <div class="year-selector">${yearBtns}</div>
+    ${statCards}
+    ${annualFpHtml}
+    <div class="section-label">Dettaglio mensile — tocca per aprire</div>
+    <div class="month-grid">${monthCards.join('')}</div>`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/views/ferie.js — Vista ferie & permessi
+   Modifica qui: layout saldi, tabelle mensili, dettaglio FP
+   ═══════════════════════════════════════════════════════════════ */
+
+function renderFerie() {
+  const now = new Date();
+  const el  = document.getElementById('view-ferie');
+
+  document.getElementById('header-subtitle').textContent = 'Ferie & Permessi';
+
+  const fp   = calcFP(now.getFullYear(), now.getMonth() + 1, true);
+  const last = fp.months[fp.months.length - 1];
+
+  if (!last) {
+    el.innerHTML = '<p style="color:var(--text-tertiary);padding:16px 0">Nessun dato disponibile.</p>';
+    return;
+  }
+
+  // ── Saldi complessivi ──────────────────────────────────────
+  const ferSaldoH  = hRound(last.fS);
+  const ferSaldoG  = (last.fS / ORE_GIORNATA).toFixed(1);
+  const permSaldoH = hRound(last.pS);
+  const permSaldoG = (last.pS / ORE_GIORNATA).toFixed(1);
+
+  const ferTotMat  = fp.months.reduce((a, x) => a + x.fMat, 0);
+  const ferTotGod  = fp.months.reduce((a, x) => a + x.fG,   0);
+  const permTotMat = fp.months.reduce((a, x) => a + x.pMat, 0);
+  const permTotGod = fp.months.reduce((a, x) => a + x.pG,   0);
+
+  const todayLabel = `ad oggi, ${now.getDate()} ${MI[now.getMonth()]} ${now.getFullYear()}`;
+
+  const summaryCards = `
+    <div class="fp-summary-card fer">
+      <div class="fp-summary-header">
+        <div>
+          <div class="fp-summary-title">${Icons.sun(14)} Ferie</div>
+          <div style="font-size:.7rem;color:var(--text-tertiary);margin-top:4px">${todayLabel}</div>
+        </div>
+        <div class="fp-big-value">
+          <div class="hours ${ferSaldoH >= 0 ? 'c-amber' : 'c-red'}">
+            ${ferSaldoH >= 0 ? '+' : ''}${ferSaldoH.toFixed(2)}h
+          </div>
+          <div class="days-label">${parseFloat(ferSaldoG) >= 0 ? '+' : ''}${ferSaldoG} giorni</div>
+        </div>
+      </div>
+      <div class="fp-detail-grid">
+        <div class="fp-detail-item">
+          <span class="v c-amber">${hRound(ferTotMat).toFixed(2)}h</span>
+          <span class="k">Maturato</span>
+          <span class="kd">${(ferTotMat / ORE_GIORNATA).toFixed(1)}g</span>
+        </div>
+        <div class="fp-detail-item">
+          <span class="v c-red">${hRound(ferTotGod).toFixed(2)}h</span>
+          <span class="k">Goduto</span>
+          <span class="kd">${(ferTotGod / ORE_GIORNATA).toFixed(1)}g</span>
+        </div>
+        <div class="fp-detail-item">
+          <span class="v ${ferSaldoH >= 0 ? 'c-amber' : 'c-red'}">${ferSaldoH.toFixed(2)}h</span>
+          <span class="k">Saldo</span>
+          <span class="kd">${ferSaldoG}g</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="fp-summary-card per">
+      <div class="fp-summary-header">
+        <div>
+          <div class="fp-summary-title">${Icons.clock(14)} Permessi</div>
+          <div style="font-size:.7rem;color:var(--text-tertiary);margin-top:4px">${todayLabel}</div>
+        </div>
+        <div class="fp-big-value">
+          <div class="hours ${permSaldoH >= 0 ? 'c-teal' : 'c-red'}">
+            ${permSaldoH >= 0 ? '+' : ''}${permSaldoH.toFixed(2)}h
+          </div>
+          <div class="days-label">${parseFloat(permSaldoG) >= 0 ? '+' : ''}${permSaldoG} giorni</div>
+        </div>
+      </div>
+      <div class="fp-detail-grid">
+        <div class="fp-detail-item">
+          <span class="v c-teal">${hRound(permTotMat).toFixed(2)}h</span>
+          <span class="k">Maturato</span>
+          <span class="kd">${(permTotMat / ORE_GIORNATA).toFixed(1)}g</span>
+        </div>
+        <div class="fp-detail-item">
+          <span class="v c-red">${hRound(permTotGod).toFixed(2)}h</span>
+          <span class="k">Goduto</span>
+          <span class="kd">${(permTotGod / ORE_GIORNATA).toFixed(1)}g</span>
+        </div>
+        <div class="fp-detail-item">
+          <span class="v ${permSaldoH >= 0 ? 'c-teal' : 'c-red'}">${permSaldoH.toFixed(2)}h</span>
+          <span class="k">Saldo</span>
+          <span class="kd">${permSaldoG}g</span>
+        </div>
+      </div>
+    </div>`;
+
+  // ── Tabelle mensili ────────────────────────────────────────
+  const makeTableRows = (type) =>
+    fp.months.map(mo => {
+      const isCurr = mo.y === now.getFullYear() && mo.m === now.getMonth() + 1;
+      const isFer  = type === 'fer';
+      const mat    = isFer ? mo.fMat : mo.pMat;
+      const god    = isFer ? mo.fG   : mo.pG;
+      const sal    = isFer ? mo.fS   : mo.pS;
+      const sc     = sal >= 0 ? (isFer ? 'c-amber' : 'c-teal') : 'c-red';
+      const mc     = isFer ? 'c-amber' : 'c-teal';
+      return `
+        <div class="fp-table-row${isCurr ? ' current-month' : ''}">
+          <span class="month-name">${MI_SHORT[mo.m - 1]} ${mo.y}</span>
+          <span class="cell ${mc}">${hRound(mat).toFixed(2)}h</span>
+          <span class="cell c-red">${hRound(god).toFixed(2)}h</span>
+          <span class="cell saldo ${sc}">${hRound(sal).toFixed(2)}h</span>
+          <span class="cell ${sc}">${(sal / ORE_GIORNATA).toFixed(1)}g</span>
+        </div>`;
+    }).join('');
+
+  const tableHeader = `
+    <div class="fp-table-header">
+      <span>Mese</span><span>Maturato</span><span>Goduto</span><span>Saldo h</span><span>Saldo g</span>
+    </div>`;
+
+  // ── Render finale ──────────────────────────────────────────
+  el.innerHTML = `
+    ${summaryCards}
+    <div class="section-label" style="margin-top:20px">Dettaglio ferie per mese</div>
+    <div class="fp-table-card">${tableHeader}${makeTableRows('fer')}</div>
+    <div class="section-label">Dettaglio permessi per mese</div>
+    <div class="fp-table-card">${tableHeader}${makeTableRows('per')}</div>`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/views/settings.js — Vista impostazioni
+   Modifica qui: aggiungi nuove opzioni di configurazione, export/import
+   ═══════════════════════════════════════════════════════════════ */
+
+function renderSettings() {
+  const cfg = getConfig();
+  const el  = document.getElementById('view-settings');
+
+  document.getElementById('header-subtitle').textContent = 'Impostazioni';
+
+  el.innerHTML = `
+    <div class="settings-section">
+      <div class="settings-section-title">Contratto</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="label">Ore standard giornaliere</div>
+            <div class="desc">Ore contrattuali per giornata intera</div>
+          </div>
+          <input type="time" id="cfg-std" class="time-input"
+            value="${cfg.std}" onchange="saveConfig(); renderAll()">
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Esporta dati</div>
+      <div class="io-grid">
+        <button class="btn btn-ghost btn-block" onclick="exportXLSX()">
+          ${Icons.download()} Esporta Excel
+        </button>
+        <button class="btn btn-ghost btn-block" onclick="exportCSV()">
+          ${Icons.download()} Esporta CSV
+        </button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Importa dati</div>
+      <label for="imp-file" class="btn btn-ghost btn-block" style="cursor:pointer">
+        ${Icons.upload()} Importa da Excel
+      </label>
+      <input type="file" id="imp-file" style="display:none"
+        accept=".xlsx,.xls" onchange="importXLSX(event)">
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-title">Zona pericolo</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="settings-row-info">
+            <div class="label">Elimina tutti i dati</div>
+            <div class="desc">Azione irreversibile — non recuperabile</div>
+          </div>
+          <button class="btn btn-danger btn-sm" onclick="clearAll()">Elimina</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      presenze · v${APP_VERSION} · dati salvati localmente sul dispositivo
+    </div>`;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
+   js/app.js — Controller principale
+   Modifica qui: stato globale, navigazione, export/import, toast
+   ═══════════════════════════════════════════════════════════════ */
+
+// ─── STATO GLOBALE ────────────────────────────────────────────
+let cY, cM;       // mese/anno visualizzati nella vista Mese
+let vY;           // anno visualizzato nella vista Anno
+let eKey = null;  // chiave giorno in modifica (YYYY-MM-DD)
+
+// ─── INIT ─────────────────────────────────────────────────────
+function init() {
+  // 1. Migrazione dati da versioni precedenti
+  const { migrated, fromVersion } = migrateIfNeeded();
+
+  // 2. Carica/merge SEED (aggiunge solo chiavi mancanti)
+  initData();
+
+  const now = new Date();
+  cY = now.getFullYear();
+  cM = now.getMonth() + 1;
+  vY = cY;
+  renderAll();
+
+  // 3. Notifica migrazione all'utente
+  if (migrated) {
+    setTimeout(() =>
+      showToast(`Dati migrati dalla v${fromVersion} — tutto ok ✓`, 'success'), 600
+    );
+  }
+}
+
+function renderAll() {
+  const active = document.querySelector('.view.active')?.dataset?.view || 'mese';
+  if (active === 'mese')     renderMese();
+  if (active === 'anno')     renderAnno();
+  if (active === 'ferie')    renderFerie();
+  if (active === 'settings') renderSettings();
+}
+
+// ─── NAVIGAZIONE ──────────────────────────────────────────────
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelector(`.nav-item[data-target="${name}"]`)?.classList.add('active');
+
+  if (name === 'mese')     renderMese();
+  if (name === 'anno')     renderAnno();
+  if (name === 'ferie')    renderFerie();
+  if (name === 'settings') renderSettings();
+}
+
+function chMonth(d) {
+  cM += d;
+  if (cM > 12) { cM = 1; cY++; }
+  if (cM < 1)  { cM = 12; cY--; }
+  renderMese();
+}
+
+function goToday() {
+  const n = new Date();
+  cY = n.getFullYear(); cM = n.getMonth() + 1;
+  showView('mese');
+}
+
+// ─── QUICK SAVE ───────────────────────────────────────────────
+function quickSave() {
+  const now  = new Date();
+  const key  = dk(now.getFullYear(), now.getMonth() + 1, now.getDate());
+  const data = loadData();
+  data[key] = {
+    t:  'Lavoro',
+    e:  document.getElementById('q-e').value,
+    up: document.getElementById('q-up').value,
+    rp: document.getElementById('q-rp').value,
+    u:  document.getElementById('q-u').value,
+  };
+  saveData(data);
+  cY = now.getFullYear(); cM = now.getMonth() + 1;
+  renderAll();
+  showToast('Giornata salvata', 'success');
+}
+
+// ─── EXPORT CSV ───────────────────────────────────────────────
+function exportCSV() {
+  const data = loadData(), cfg = getConfig(), std = t2m(cfg.std) || 480;
+  let csv = 'Data,Giorno,Tipo,Entrata,Usc.Pranzo,Rient.Pranzo,Uscita,Ore Totali,Scostamento,Ore Permesso,Ore Ferie Parz.,Note\n';
+  Object.keys(data).sort().forEach(k => {
+    const [y, m, d] = k.split('-').map(Number), r = data[k];
+    const o = oreG(r), dl = dltG(r, std);
+    csv += [
+      k, DI[new Date(y, m - 1, d).getDay()], r.t || '', r.e || '',
+      r.up || '', r.rp || '', r.u || '',
+      o  != null ? m2t(o)       : '',
+      dl != null ? m2t(dl, true): '',
+      r.po || '', r.fo || '',
+      `"${(r.n || '').replace(/"/g, '""')}"`
+    ].join(',') + '\n';
+  });
+  const a = document.createElement('a');
+  a.href     = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'presenze.csv';
+  a.click();
+  showToast('CSV esportato', 'success');
+}
+
+// ─── EXPORT XLSX ──────────────────────────────────────────────
+// xlsx.min.js opzionale: scarica da https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
+// e mettilo in js/xlsx.min.js. Se assente, il tasto usa exportCSV come fallback.
+function exportXLSX() {
+  if (typeof XLSX === 'undefined') {
+    showToast('xlsx.min.js non presente — esporto CSV', '');
+    exportCSV();
+    return;
+  }
+  const data = loadData(), cfg = getConfig(), std = t2m(cfg.std) || 480;
+  const rows = [['Data','Giorno','Tipo','Entrata','Usc.Pranzo','Rient.Pranzo','Uscita',
+    'Ore Totali','Scostamento','Ore Permesso','Ore Ferie Parz.','Note']];
+  Object.keys(data).sort().forEach(k => {
+    const [y, m, d] = k.split('-').map(Number), r = data[k];
+    const o = oreG(r), dl = dltG(r, std);
+    rows.push([k, DI[new Date(y, m-1, d).getDay()], r.t||'', r.e||'', r.up||'', r.rp||'', r.u||'',
+      o  != null ? m2t(o)       : '',
+      dl != null ? m2t(dl, true): '',
+      r.po||'', r.fo||'', r.n||'']);
+  });
+  const fpRows = [['RIEPILOGO FERIE & PERMESSI'],
+    ['Mese','Res.AP Fer','Mat.Fer','God.Fer','Saldo Fer (h)','Saldo Fer (g)',
+     'Res.AP Per','Mat.Per','God.Per','Saldo Per (h)','Saldo Per (g)']];
+  calcFP(2026, 12, false).months.forEach(x =>
+    fpRows.push([`${MI[x.m-1]} ${x.y}`,
+      hRound(x.fAP).toFixed(2), hRound(x.fMat).toFixed(2), hRound(x.fG).toFixed(2),
+      hRound(x.fS).toFixed(2),  (x.fS  / ORE_GIORNATA).toFixed(2),
+      hRound(x.pAP).toFixed(2), hRound(x.pMat).toFixed(2), hRound(x.pG).toFixed(2),
+      hRound(x.pS).toFixed(2),  (x.pS  / ORE_GIORNATA).toFixed(2)])
+  );
+  const wb  = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(rows);
+  ws1['!cols'] = [{wch:12},{wch:11},{wch:10},{wch:8},{wch:12},{wch:14},
+                  {wch:8},{wch:10},{wch:12},{wch:10},{wch:14},{wch:35}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Presenze');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fpRows), 'Ferie & Permessi');
+  XLSX.writeFile(wb, 'presenze.xlsx');
+  showToast('Excel esportato', 'success');
+}
+
+// ─── IMPORT XLSX ──────────────────────────────────────────────
+function importXLSX(ev) {
+  if (typeof XLSX === 'undefined') {
+    showToast('xlsx.min.js non presente — import non disponibile', 'error');
+    ev.target.value = '';
+    return;
+  }
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb   = XLSX.read(e.target.result, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      const data = loadData();
+      let imp = 0;
+      rows.slice(1).forEach(r => {
+        const [ds,,t,en,up,rp,u,,,po,fo,n] = r;
+        if (!ds || !t) return;
+        const key = String(ds).substring(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return;
+        const rec = { t };
+        if (t === 'Lavoro') {
+          if (en) rec.e = String(en); if (up) rec.up = String(up);
+          if (rp) rec.rp = String(rp); if (u) rec.u = String(u);
+          if (po) rec.po = parseFloat(po); if (fo) rec.fo = parseFloat(fo);
+        }
+        if (n) rec.n = String(n);
+        data[key] = rec; imp++;
+      });
+      saveData(data); renderAll();
+      showToast(`${imp} righe importate`, 'success');
+    } catch { showToast('Errore importazione', 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+  ev.target.value = '';
+}
+
+// ─── UPDATE BANNER ────────────────────────────────────────────
+function showUpdateBanner(version) {
+  const banner = document.getElementById('update-banner');
+  if (!banner) return;
+  banner.querySelector('.ub-text').innerHTML =
+    `<strong>Versione ${version} disponibile</strong> — ricarica per aggiornare l'app.`;
+  banner.classList.add('visible');
+}
+
+// ─── TOAST ────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast visible' + (type ? ' ' + type : '');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('visible'), 2400);
+}
+
+// ─── TASTIERA ─────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// ─── AVVIO ────────────────────────────────────────────────────
+init();
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,140 @@
+/* ═══════════════════════════════════════════════════════════════
+   layout.css — Shell, header, navigazione, viste
+   Modifica qui: struttura pagina, posizione navbar, altezze
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── APP SHELL ──────────────────────────────────────────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* ─── HEADER ─────────────────────────────────────────────────── */
+#header {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-pad);
+  padding-top: env(safe-area-inset-top, 0);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.app-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 1.2rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+
+.header-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-right {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ─── ICON BUTTON ────────────────────────────────────────────── */
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* ─── MAIN CONTENT ───────────────────────────────────────────── */
+#main {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: calc(var(--nav-height) + var(--safe-bottom) + 8px);
+}
+
+/* ─── VIEWS ──────────────────────────────────────────────────── */
+.view {
+  display: none;
+  padding: var(--page-pad);
+  animation: fadeIn 0.18s ease;
+}
+.view.active {
+  display: block;
+}
+
+/* ─── BOTTOM NAV ─────────────────────────────────────────────── */
+#bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 640px;
+  height: calc(var(--nav-height) + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--border-soft);
+  display: flex;
+  align-items: flex-start;
+  padding-top: 8px;
+  z-index: 50;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  transition: color 0.15s;
+  border-radius: 10px;
+  margin: 0 4px;
+}
+
+.nav-item svg {
+  transition: stroke 0.15s;
+}
+
+.nav-item.active {
+  color: var(--text-primary);
+}
+
+.nav-item.active svg {
+  stroke: var(--accent);
+}
