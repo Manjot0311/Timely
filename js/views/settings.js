@@ -97,6 +97,6 @@ function renderSettings() {
     </div>
 
     <div class="settings-footer">
-      presenze · v${APP_VERSION} · dati salvati localmente sul dispositivo
+      Work Time · v${APP_VERSION} · dati salvati localmente sul dispositivo
     </div>`;
 }
