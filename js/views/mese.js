@@ -25,9 +25,10 @@ function renderMese() {
       ggL++;
       if (dl > 0) str += dl; else if (dl < 0) deb += dl;
     }
-    if (r.t === 'Ferie')    ferD++;
+    // Trattiamo Permesso full-day come Ferie nei conteggi (regola nuova)
+    if (r.t === 'Ferie' || r.t === 'Permesso') ferD++;
     if (r.t === 'Malattia') malD++;
-    if (r.t === 'Permesso') permD++;
+    // permD lascio per permessi full-day storici, ma di default non incrementato separatamente
   }
   // Ore lavorate = giorni lavorati × ore standard contrattuali (in minuti)
   const totO = ggL * contract.oreStd * 60;
@@ -129,7 +130,7 @@ function renderMese() {
       const isAutoHoliday = !we && r?._auto === true && r?.t === 'Festivo';
       const tipo = we ? 'Weekend' : (r?.t || '');
 
-      const badgeMap = { Lavoro:'badge-lavoro', Ferie:'badge-ferie', Festivo:'badge-festivo',
+      const badgeMap = { Lavoro:'badge-lavoro', 'Fuori sede':'badge-lavoro', Ferie:'badge-ferie', Festivo:'badge-festivo',
                          Malattia:'badge-malattia', Permesso:'badge-permesso' };
       const badgeCls = badgeMap[tipo] || '';
 
@@ -140,7 +141,8 @@ function renderMese() {
         om            ? 'other-month'    : '',
         isAutoHoliday ? 'auto-holiday'   : '',
         r?.t === 'Ferie'    ? 'ferie-row'    : '',
-        r?.t === 'Permesso' ? 'permesso-row' : ''
+        r?.t === 'Permesso' ? 'permesso-row' : '',
+        r?.t === 'Fuori sede' ? 'fuori-row'   : ''
       ].filter(Boolean).join(' ');
 
       const dateLabel = om
