@@ -48,8 +48,34 @@ function openModal(key) {
     modalBody.insertBefore(banner, modalBody.firstChild);
   }
 
+  // Banner per record storici "Permesso" (legacy)
+  const existingPermBanner = document.getElementById('modal-perm-legacy-banner');
+  if (existingPermBanner) existingPermBanner.remove();
+  if (r.t === 'Permesso') {
+    const banner = document.createElement('div');
+    banner.id = 'modal-perm-legacy-banner';
+    banner.style.cssText = `
+      background: color-mix(in srgb, var(--amber) 6%, var(--surface-2));
+      border-left: 3px solid var(--amber);
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin: 0 0 12px 0;
+      font-size: .78rem;
+      color: var(--text-secondary, #666);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    `;
+    banner.innerHTML = `<strong>Nota:</strong> questo giorno è segnato come <em>Permesso (storico)</em>. D'ora in poi i permessi di intera giornata sono trattati come ferie nei calcoli. Puoi modificarlo se vuoi.`;
+    const modalBody = document.querySelector('.modal-body');
+    modalBody.insertBefore(banner, modalBody.firstChild);
+  }
+
   document.getElementById('modal-date').textContent = `${DI[dw]}, ${d} ${MI[m - 1]} ${y}`;
-  document.getElementById('m-tipo').value  = r.t  || '';
+
+  // Se il record era "Permesso" (storico) lo pre-seleziono come "Ferie" in UI
+  // (non modifico i dati finché l'utente non salva)
+  document.getElementById('m-tipo').value  = r.t === 'Permesso' ? 'Ferie' : (r.t || '');
   document.getElementById('m-e').value    = r.e   || '';
   document.getElementById('m-up').value   = r.up  || '';
   document.getElementById('m-rp').value   = r.rp  || '';
@@ -68,9 +94,12 @@ function onTipo() {
   const t  = document.getElementById('m-tipo').value;
   const wf = document.getElementById('modal-work-fields');
   const ab = document.getElementById('modal-absence-section');
-  const show = t === 'Lavoro';
-  wf.style.display = show ? '' : 'none';
-  if (ab) ab.style.display = show ? '' : 'none';
+  // Mostro gli orari sia per Lavoro che per Fuori sede
+  const showOrari  = t === 'Lavoro' || t === 'Fuori sede';
+  // Abilito le assenze parziali anche per Fuori sede (per gestire ibridi mezza giornata)
+  const showAssenze = t === 'Lavoro' || t === 'Fuori sede';
+  wf.style.display = showOrari ? '' : 'none';
+  if (ab) ab.style.display = showAssenze ? '' : 'none';
 }
 
 /** Chiude il modal */
@@ -78,6 +107,8 @@ function closeModal() {
   // Rimuovi banner auto-holiday se presente
   const banner = document.getElementById('modal-auto-holiday-banner');
   if (banner) banner.remove();
+  const permBanner = document.getElementById('modal-perm-legacy-banner');
+  if (permBanner) permBanner.remove();
 
   document.getElementById('modal-overlay').classList.remove('open');
   eKey = null;
@@ -93,7 +124,7 @@ function saveDay() {
     delete data[eKey];
   } else {
     const r = { t };
-    if (t === 'Lavoro') {
+    if (t === 'Lavoro' || t === 'Fuori sede') {
       const e  = document.getElementById('m-e').value;
       const up = document.getElementById('m-up').value;
       const rp = document.getElementById('m-rp').value;
@@ -102,8 +133,12 @@ function saveDay() {
       if (up) r.up = up;
       if (rp) r.rp = rp;
       if (u)  r.u  = u;
+      // Assenze parziali per Lavoro e Fuori sede (mezza giornata)
       const po = readPermFields();
       if (po > 0) r.po = po;
+    } else {
+      // tipi senza orari: Ferie, Festivo, Malattia
+      // Nessun campo orari/po viene propagato.
     }
     const n = document.getElementById('m-note').value.trim();
     if (n) r.n = n;
