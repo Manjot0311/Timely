@@ -4,7 +4,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 function oreG(r) {
-  if (!r || r.t !== 'Lavoro') return null;
+  if (!r || (r.t !== 'Lavoro' && r.t !== 'Fuori sede')) return null;
   const e = t2m(r.e), up = t2m(r.up), rp = t2m(r.rp), u = t2m(r.u);
   if (e == null || u == null) return null;
   let tot = u - e;
@@ -28,9 +28,11 @@ function godutoMese(y, m, upToDay, data) {
   for (let d = 1; d <= lim; d++) {
     const r = data[dk(y, m, d)];
     if (!r) continue;
-    if (r.t === 'Ferie')    fG += contract.oreStd;
-    if (r.t === 'Permesso') pG += contract.oreStd;
-    if (r.t === 'Lavoro') {
+    // Tratto i permessi full-day storici come ferie (regola nuova):
+    // se r.t === 'Permesso' viene considerato ferie a tutto il giorno.
+    if (r.t === 'Ferie' || r.t === 'Permesso')    fG += contract.oreStd;
+    // Considera i parziali per Lavoro e Fuori sede (mezza giornata, po/fo)
+    if (r.t === 'Lavoro' || r.t === 'Fuori sede') {
       if (r.po) pG += parseFloat(r.po) || 0;
       if (r.fo) fG += parseFloat(r.fo) || 0;
     }
